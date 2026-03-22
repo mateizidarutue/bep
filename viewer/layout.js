@@ -29,12 +29,13 @@ export const ITEM_X      = 200;
 export const TIMELINE_X0 = 272;
 
 const ROW_H_COLLAPSED   = 52;
-const ROW_H_EXPANDED    = 96;
+const ROW_H_EXPANDED    = 124;
 const BLOCK_PAD_TOP     = 24;
 const BLOCK_PAD_BOT     = 16;
 const MULTI_PO_GAP      = 28;
 const TIMELINE_PAD_R    = 48;
 const MIN_EVENT_SPACING = 22;
+const MIN_RESOURCE_SPACING = 46;
 
 export function computeLayout(graphs, expanded, width) {
   const timelineW = Math.max(width - TIMELINE_X0 - TIMELINE_PAD_R, 180);
@@ -49,7 +50,7 @@ export function computeLayout(graphs, expanded, width) {
 }
 
 function _layoutBlock(graph, expanded, startY, timelineW) {
-  const { po, items, events, dfItem, dfPo } = graph;
+  const { po, items, events, dfItem, dfPo, poAttrs, itemAttrsById } = graph;
   events.forEach(e => { if (!e.id) e.id = e.event_id; });
   const evById = Object.fromEntries(events.map(e => [e.id, e]));
 
@@ -66,6 +67,7 @@ function _layoutBlock(graph, expanded, startY, timelineW) {
     const midY  = rowY + h / 2;
     const color = ITEM_COLORS[i % ITEM_COLORS.length];
     const isExp = expanded.has(item);
+    const itemAttrs = itemAttrsById?.[item] ?? {};
 
     const itemEvs = events.filter(e => e.poitem_id === item).sort((a, b) => a.date - b.date);
     const evCount   = itemEvs.length;
@@ -75,6 +77,8 @@ function _layoutBlock(graph, expanded, startY, timelineW) {
 
     let timelineNodes = [];
     let dfItemEdges   = [];
+    let resourceNodes = [];
+    let resourceLinks = [];
 
     if (isExp && itemEvs.length > 0) {
       const minT = itemEvs[0].date.getTime();
@@ -99,10 +103,57 @@ function _layoutBlock(graph, expanded, startY, timelineW) {
           return { id: `df-${s}-${t}`, type: Math.abs(src.x - tgt.x) < 2 ? "arc" : "line",
                    x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y, color };
         });
+
+      const resY = rowY + 42;
+      const byResource = {};
+      timelineNodes.filter(n => n.org_resource).forEach(n => {
+        if (!byResource[n.org_resource]) byResource[n.org_resource] = [];
+        byResource[n.org_resource].push(n);
+      });
+
+      resourceNodes = Object.entries(byResource)
+        .map(([resource, nodes]) => ({
+          id: resource,
+          label: resource,
+          shortLabel: _shortResource(resource),
+          count: nodes.length,
+          color: nodes[0].resourceColor,
+          x: nodes.reduce((sum, n) => sum + n.x, 0) / nodes.length,
+          y: resY,
+          nodes,
+        }))
+        .sort((a, b) => a.x - b.x);
+
+      for (let j = 1; j < resourceNodes.length; j++) {
+        if (resourceNodes[j].x - resourceNodes[j - 1].x < MIN_RESOURCE_SPACING) {
+          resourceNodes[j].x = resourceNodes[j - 1].x + MIN_RESOURCE_SPACING;
+        }
+      }
+      for (let j = resourceNodes.length - 2; j >= 0; j--) {
+        resourceNodes[j].x = Math.min(resourceNodes[j].x, resourceNodes[j + 1].x - MIN_RESOURCE_SPACING);
+      }
+
+      const maxX = TIMELINE_X0 + timelineW;
+      resourceNodes = resourceNodes.map(node => ({
+        ...node,
+        x: Math.max(TIMELINE_X0 + 10, Math.min(node.x, maxX)),
+      }));
+
+      resourceLinks = resourceNodes.flatMap(node =>
+        node.nodes.map(n => ({
+          id: `res-${node.id}-${n.id}`,
+          x1: node.x,
+          y1: node.y + 10,
+          x2: n.x,
+          y2: midY - EVENT_R - 2,
+          color: node.color,
+        }))
+      );
     }
 
     itemRows.push({ item, i, h, midY, rowY, color, isExp, timelineNodes, dfItemEdges,
-                    evCount, dateRange, corrEdge: { x1: ITEM_X, y1: midY, x2: PO_X, y2: poMidY } });
+                    resourceNodes, resourceLinks, itemAttrs, evCount, dateRange,
+                    corrEdge: { x1: ITEM_X, y1: midY, x2: PO_X, y2: poMidY } });
     rowY += h;
   });
 
@@ -128,9 +179,13 @@ function _layoutBlock(graph, expanded, startY, timelineW) {
       return { id: `dfpo-${s}-${t}`, x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y, cx: mx, cy };
     });
 
-  return { po, items, totalHeight, poMidY, startY, itemRows, dfPoEdges, meta: graph.meta };
+  return { po, items, totalHeight, poMidY, startY, itemRows, dfPoEdges, poAttrs, meta: graph.meta };
 }
 
 function _fmt(d) {
   return d?.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) ?? "?";
+}
+
+function _shortResource(resource) {
+  return resource.length > 12 ? `${resource.slice(0, 9)}...` : resource;
 }

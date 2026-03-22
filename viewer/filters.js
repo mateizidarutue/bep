@@ -13,6 +13,18 @@
 
 "use strict";
 
+const ACTIVITY_PALETTE = [
+  "#2563eb", "#7c3aed", "#ea580c", "#059669", "#dc2626",
+  "#0891b2", "#ca8a04", "#db2777", "#4f46e5", "#0f766e",
+  "#9333ea", "#c2410c",
+];
+const RESOURCE_PALETTE = [
+  "#0f766e", "#7c3aed", "#b45309", "#2563eb", "#be123c",
+  "#0369a1", "#4d7c0f", "#9333ea", "#b91c1c", "#475569",
+];
+const PO_ATTR_KEYS = ["Vendor", "Company", "Document_Type", "Source"];
+const ITEM_ATTR_KEYS = ["Item_Type", "Item_Category", "Goods_Receipt", "GR_Based_Inv_Verif"];
+
 // ── CSV parser (no external dependency) ───────────────────────────────────────
 
 function parseCSV(text) {
@@ -123,6 +135,14 @@ export function buildStore(sources) {
 
   // All unique activities in the dataset
   const allActivities = [...new Set(events.map(e => e.activity))].sort();
+  const allResources = [...new Set(events.map(e => e.org_resource).filter(Boolean))].sort();
+  const activityColorByName = _buildColorMap(allActivities, ACTIVITY_PALETTE);
+  const resourceColorByName = _buildColorMap(allResources, RESOURCE_PALETTE, "#94a3b8");
+
+  events.forEach(e => {
+    e.activityColor = activityColorByName[e.activity] ?? "#64748b";
+    e.resourceColor = resourceColorByName[e.org_resource] ?? "#94a3b8";
+  });
 
   // PO list sorted by number of events (descending)
   const poList = Object.entries(eventsByPo)
@@ -143,6 +163,9 @@ export function buildStore(sources) {
     dfItemByEntity,
     dfPoByPo,
     allActivities,
+    allResources,
+    activityColorByName,
+    resourceColorByName,
     poList,
   };
 
@@ -230,7 +253,12 @@ export function getGraph(poId, filters = {}) {
     dfPoCount: dfPo.length,
   };
 
-  return { po: poId, items, events, dfItem, dfPo, meta };
+  const poAttrs = _pickAttrs(store.eventsByPo[poId]?.[0], PO_ATTR_KEYS);
+  const itemAttrsById = Object.fromEntries(
+    items.map(item => [item, _pickAttrs(store.eventsByItem[item]?.[0], ITEM_ATTR_KEYS)])
+  );
+
+  return { po: poId, items, events, dfItem, dfPo, meta, poAttrs, itemAttrsById };
 }
 
 /**
@@ -304,4 +332,29 @@ export async function loadFromFiles(fileList) {
     needed.map(n => byName[n].text())
   );
   return Object.fromEntries(needed.map((n, i) => [n, texts[i]]));
+}
+
+function _pickAttrs(obj, keys) {
+  if (!obj) return {};
+  return Object.fromEntries(
+    keys
+      .filter(key => obj[key] !== undefined && obj[key] !== null && obj[key] !== "")
+      .map(key => [key, obj[key]])
+  );
+}
+
+function _buildColorMap(values, palette, fallbackBase = null) {
+  const map = {};
+  values.forEach((value, i) => {
+    map[value] = palette[i] ?? fallbackBase ?? _hashColor(value);
+  });
+  return map;
+}
+
+function _hashColor(value) {
+  let hash = 0;
+  const s = String(value ?? "");
+  for (let i = 0; i < s.length; i++) hash = ((hash << 5) - hash) + s.charCodeAt(i);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue} 62% 46%)`;
 }

@@ -56,7 +56,7 @@
           DF — PO level
         </span>
         <label class="toggle">
-          <input type="checkbox" id="tog-dfpo" checked>
+          <input type="checkbox" id="tog-dfpo">
           <div class="toggle-track"></div>
         </label>
       </div>
@@ -67,6 +67,16 @@
         </span>
         <label class="toggle">
           <input type="checkbox" id="tog-corr">
+          <div class="toggle-track"></div>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">
+          <span class="swatch" style="background:rgba(15,118,110,0.5)"></span>
+          Resource nodes
+        </span>
+        <label class="toggle">
+          <input type="checkbox" id="tog-resources">
           <div class="toggle-track"></div>
         </label>
       </div>
@@ -82,13 +92,13 @@
       </div>
       <div class="slider-row">
         <span class="slider-label">DF (PO)</span>
-        <input type="range" id="sl-dfpo" min="0.05" max="1" step="0.05" value="0.5">
-        <span class="slider-val" id="sl-dfpo-val">0.5</span>
+        <input type="range" id="sl-dfpo" min="0.05" max="1" step="0.05" value="0.2">
+        <span class="slider-val" id="sl-dfpo-val">0.2</span>
       </div>
       <div class="slider-row">
         <span class="slider-label">CORR</span>
-        <input type="range" id="sl-corr" min="0.05" max="1" step="0.05" value="0.25">
-        <span class="slider-val" id="sl-corr-val">0.25</span>
+        <input type="range" id="sl-corr" min="0.05" max="1" step="0.05" value="0.2">
+        <span class="slider-val" id="sl-corr-val">0.2</span>
       </div>
     </div>
 
@@ -108,6 +118,10 @@
     <!-- Activity filter -->
     <div class="panel-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
       <div class="panel-section-title">Activities</div>
+      <div class="encoding-hint">
+        Event fill = activity<br>
+        Event border = resource
+      </div>
       <div class="btn-row">
         <button class="btn-small" id="btn-act-all">All</button>
         <button class="btn-small" id="btn-act-none">None</button>
@@ -164,7 +178,7 @@
   <span class="status-item">PO: <b id="sb-po">—</b></span>
   <span class="status-item">Items: <b id="sb-items">—</b></span>
   <span class="status-item">Events: <b id="sb-events">—</b></span>
-  <span class="status-hint">Scroll or +/- to zoom · Drag or arrows to pan · F fit · 0 reset</span>
+  <span class="status-hint">Fill = activity · Border = resource · Scroll or +/- zoom · Drag or arrows pan · F fit · 0 reset</span>
 </div>
 
 <script type="module">
@@ -188,6 +202,7 @@ const state = {
   resource:     null,
   maxItems:     0,
   expandedItems: new Set(),
+  fitNextDraw:  true,
 };
 
 // ── Init renderer ─────────────────────────────────────────────────────────────
@@ -275,6 +290,7 @@ function selectPo(poId) {
   state.selectedPo = poId;
   state.activities = null; // reset activity filter on PO change
   state.expandedItems = new Set();
+  state.fitNextDraw = true;
 
   // Update UI selection
   document.querySelectorAll(".po-item").forEach(el => {
@@ -296,11 +312,13 @@ function buildActivityFilter(poId) {
   container.innerHTML = "";
 
   activities.forEach(([act, count]) => {
+    const color = getStore().activityColorByName?.[act] ?? "#64748b";
     const row = document.createElement("div");
     row.className = "act-item";
     const cbId = `act-${act.replace(/\W/g, "_")}`;
     row.innerHTML = `
       <input type="checkbox" id="${cbId}" checked data-act="${act}">
+      <span class="act-swatch" style="background:${color}"></span>
       <label for="${cbId}" title="${act}">${act}</label>
       <span class="act-count">${count}</span>
     `;
@@ -339,6 +357,9 @@ document.getElementById("tog-dfpo").addEventListener("change", function() {
 });
 document.getElementById("tog-corr").addEventListener("change", function() {
   setVisibility("corr", this.checked);
+});
+document.getElementById("tog-resources").addEventListener("change", function() {
+  setVisibility("resources", this.checked);
 });
 
 // ── Opacity sliders ───────────────────────────────────────────────────────────
@@ -458,7 +479,8 @@ function redraw() {
   });
 
   autoClutterGuard(graph);
-  draw([graph], state.expandedItems);
+  draw([graph], state.expandedItems, { fit: state.fitNextDraw });
+  state.fitNextDraw = false;
   updateStats(graph.meta);
   updateStatusBar(graph);
 }
@@ -526,7 +548,10 @@ function shouldIgnoreShortcut(event) {
 
 // ── Resize handler ────────────────────────────────────────────────────────────
 window.addEventListener("resize", () => {
-  if (state.selectedPo) redraw();
+  if (state.selectedPo) {
+    state.fitNextDraw = true;
+    redraw();
+  }
 });
 </script>
 </body>

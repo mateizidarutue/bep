@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EKG Layout — BPIC 2019</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
+<div id="header">
+  <span class="header-title">EKG <span>Layout</span> Prototype</span>
+  <div class="header-sep"></div>
+  <span style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono)">
+    BPIC Challenge 2019 · Swim-lane + Temporal x-axis · Approach 1
+  </span>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <button class="btn-small" id="btn-fit">Fit view</button>
+    <button class="btn-small" id="btn-reset-zoom">Reset zoom</button>
+    <button class="btn-small" id="btn-load-files">Load CSVs…</button>
+    <input type="file" id="file-input" accept=".csv" multiple style="display:none">
+  </div>
+</div>
+
+<!-- ── Main ────────────────────────────────────────────────────────────────── -->
+<div id="main">
+
+  <!-- ── Side panel ──────────────────────────────────────────────────────── -->
+  <div id="panel">
+
+    <!-- PO selector -->
+    <div class="panel-section">
+      <div class="panel-section-title">Purchase Order</div>
+      <input class="search-box" id="po-search" type="text" placeholder="Search PO…">
+      <div class="po-list" id="po-list"></div>
+    </div>
+
+    <!-- Edge visibility -->
+    <div class="panel-section">
+      <div class="panel-section-title">Edge types</div>
+      <div class="toggle-row">
+        <span class="toggle-label">
+          <span class="swatch" style="background:rgba(36,52,73,0.55)"></span>
+          DF — item level
+        </span>
+        <label class="toggle">
+          <input type="checkbox" id="tog-dfitem" checked>
+          <div class="toggle-track"></div>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">
+          <span class="swatch" style="background:#2563eb"></span>
+          DF — PO level
+        </span>
+        <label class="toggle">
+          <input type="checkbox" id="tog-dfpo" checked>
+          <div class="toggle-track"></div>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">
+          <span class="swatch" style="background:rgba(36,52,73,0.22)"></span>
+          CORR edges
+        </span>
+        <label class="toggle">
+          <input type="checkbox" id="tog-corr">
+          <div class="toggle-track"></div>
+        </label>
+      </div>
+    </div>
+
+    <!-- Opacity sliders -->
+    <div class="panel-section">
+      <div class="panel-section-title">Edge opacity</div>
+      <div class="slider-row">
+        <span class="slider-label">DF (item)</span>
+        <input type="range" id="sl-dfitem" min="0.05" max="1" step="0.05" value="0.7">
+        <span class="slider-val" id="sl-dfitem-val">0.7</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">DF (PO)</span>
+        <input type="range" id="sl-dfpo" min="0.05" max="1" step="0.05" value="0.5">
+        <span class="slider-val" id="sl-dfpo-val">0.5</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">CORR</span>
+        <input type="range" id="sl-corr" min="0.05" max="1" step="0.05" value="0.25">
+        <span class="slider-val" id="sl-corr-val">0.25</span>
+      </div>
+    </div>
+
+    <!-- Item limit -->
+    <div class="panel-section">
+      <div class="panel-section-title">POItem limit</div>
+      <div class="slider-row">
+        <span class="slider-label">Max items shown</span>
+        <input type="range" id="sl-maxitems" min="0" max="20" step="1" value="0">
+        <span class="slider-val" id="sl-maxitems-val">all</span>
+      </div>
+      <div style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.5">
+        Limits items to avoid visual overload. 0 = show all.
+      </div>
+    </div>
+
+    <!-- Activity filter -->
+    <div class="panel-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+      <div class="panel-section-title">Activities</div>
+      <div class="btn-row">
+        <button class="btn-small" id="btn-act-all">All</button>
+        <button class="btn-small" id="btn-act-none">None</button>
+      </div>
+      <div class="activity-list" id="activity-list"></div>
+    </div>
+
+    <!-- Stats -->
+    <div id="stats">
+      <div class="stat-row">Events shown <span id="stat-events">—</span></div>
+      <div class="stat-row">POItems shown <span id="stat-items">—</span></div>
+      <div class="stat-row">DF edges (item) <span id="stat-dfitem">—</span></div>
+      <div class="stat-row">DF edges (PO) <span id="stat-dfpo">—</span></div>
+    </div>
+
+  </div><!-- /panel -->
+
+  <!-- ── Canvas ────────────────────────────────────────────────────────────── -->
+  <div id="canvas-wrap">
+    <svg id="canvas"></svg>
+    <div id="minimap-wrap" class="hidden">
+      <div class="minimap-title">Navigator</div>
+      <svg id="minimap"></svg>
+    </div>
+
+    <!-- Drop zone (shown when no data) -->
+    <div id="dropzone">
+      <div class="drop-card">
+        <h2>Load your EKG data</h2>
+        <p>
+          Run the preprocessing script to generate your CSVs, then load them here.<br><br>
+          <b>Option 1 — Local server</b> (recommended):<br>
+          Serve the repo root with <code>npx serve .</code> and open
+          <code>viewer/index.html</code>. The CSVs in <code>output/</code> load automatically.<br><br>
+          <b>Option 2 — File picker</b>:<br>
+          Click the button below and select all six <code>.csv</code> files from your
+          <code>output/</code> folder at once.
+        </p>
+        <button class="drop-btn" id="btn-drop-load">Select CSV files…</button>
+      </div>
+    </div>
+
+    <!-- Loading overlay -->
+    <div id="loading" class="hidden">Loading data…</div>
+
+    <!-- Tooltip -->
+    <div id="tooltip"></div>
+
+  </div><!-- /canvas-wrap -->
+</div><!-- /main -->
+
+<!-- ── Status bar ───────────────────────────────────────────────────────────── -->
+<div id="statusbar">
+  <span class="status-item">PO: <b id="sb-po">—</b></span>
+  <span class="status-item">Items: <b id="sb-items">—</b></span>
+  <span class="status-item">Events: <b id="sb-events">—</b></span>
+  <span class="status-hint">Scroll or +/- to zoom · Drag or arrows to pan · F fit · 0 reset</span>
+</div>
+
+<script type="module">
+import {
+  buildStore, getStore, getGraph,
+  getResourcesForPo, getActivityCountsForPo,
+  loadFromServer, loadFromFiles,
+} from "./filters.js";
+
+import {
+  init as renderInit, draw,
+  setVisibility, setOpacity,
+  fitToView, resetZoom,
+  panBy, zoomBy,
+} from "./render.js";
+
+// ── App state ─────────────────────────────────────────────────────────────────
+const state = {
+  selectedPo:   null,
+  activities:   null,   // null = all; Set<string> = whitelist
+  resource:     null,
+  maxItems:     0,
+  expandedItems: new Set(),
+};
+
+// ── Init renderer ─────────────────────────────────────────────────────────────
+renderInit(
+  "canvas",
+  showTooltip,
+  hideTooltip,
+  onItemExpand,
+  "minimap",
+);
+
+// ── Load data ─────────────────────────────────────────────────────────────────
+async function tryLoad() {
+  showLoading(true);
+  // Try server first
+  const serverSources = await loadFromServer("../output");
+  if (serverSources) {
+    buildStore(serverSources);
+    onDataLoaded();
+  } else {
+    // Show drop zone
+    showDropzone(true);
+  }
+  showLoading(false);
+}
+
+tryLoad();
+
+// File picker (header button + drop zone button)
+function openFilePicker() {
+  document.getElementById("file-input").click();
+}
+document.getElementById("btn-load-files").addEventListener("click", openFilePicker);
+document.getElementById("btn-drop-load").addEventListener("click", openFilePicker);
+
+document.getElementById("file-input").addEventListener("change", async (e) => {
+  if (!e.target.files.length) return;
+  showLoading(true);
+  try {
+    const sources = await loadFromFiles(e.target.files);
+    buildStore(sources);
+    onDataLoaded();
+  } catch (err) {
+    alert(`Error loading files: ${err.message}\n\nMake sure you selected all of: events.csv, entities.csv, corr.csv, df.csv`);
+  }
+  showLoading(false);
+});
+
+function onDataLoaded() {
+  showDropzone(false);
+  showMinimap(true);
+  const store = getStore();
+  buildPoList(store.poList);
+  // Auto-select PO with most items
+  const firstPo = store.poList[0]?.id;
+  if (firstPo) selectPo(firstPo);
+}
+
+// ── PO list ───────────────────────────────────────────────────────────────────
+function buildPoList(poList) {
+  const container = document.getElementById("po-list");
+  container.innerHTML = "";
+  poList.forEach(po => {
+    const el = document.createElement("div");
+    el.className = "po-item";
+    el.dataset.po = po.id;
+    el.innerHTML = `
+      <span class="po-id">${po.id}</span>
+      <span class="po-meta">${po.itemCount}i · ${po.eventCount}e</span>
+    `;
+    el.addEventListener("click", () => selectPo(po.id));
+    container.appendChild(el);
+  });
+}
+
+// PO search filter
+document.getElementById("po-search").addEventListener("input", function() {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll(".po-item").forEach(el => {
+    el.style.display = el.dataset.po.includes(q) ? "" : "none";
+  });
+});
+
+function selectPo(poId) {
+  state.selectedPo = poId;
+  state.activities = null; // reset activity filter on PO change
+  state.expandedItems = new Set();
+
+  // Update UI selection
+  document.querySelectorAll(".po-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.po === poId);
+  });
+  // Scroll selected item into view
+  const active = document.querySelector(".po-item.active");
+  active?.scrollIntoView({ block: "nearest" });
+
+  buildActivityFilter(poId);
+  redraw();
+}
+
+// ── Activity filter ───────────────────────────────────────────────────────────
+function buildActivityFilter(poId) {
+  const counts = getActivityCountsForPo(poId);
+  const activities = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const container = document.getElementById("activity-list");
+  container.innerHTML = "";
+
+  activities.forEach(([act, count]) => {
+    const row = document.createElement("div");
+    row.className = "act-item";
+    const cbId = `act-${act.replace(/\W/g, "_")}`;
+    row.innerHTML = `
+      <input type="checkbox" id="${cbId}" checked data-act="${act}">
+      <label for="${cbId}" title="${act}">${act}</label>
+      <span class="act-count">${count}</span>
+    `;
+    row.querySelector("input").addEventListener("change", onActivityChange);
+    container.appendChild(row);
+  });
+}
+
+function onActivityChange() {
+  const checked = [...document.querySelectorAll("#activity-list input:checked")];
+  const all     = [...document.querySelectorAll("#activity-list input")];
+  state.activities = checked.length === all.length
+    ? null
+    : new Set(checked.map(cb => cb.dataset.act));
+  redraw();
+}
+
+document.getElementById("btn-act-all").addEventListener("click", () => {
+  document.querySelectorAll("#activity-list input").forEach(cb => cb.checked = true);
+  state.activities = null;
+  redraw();
+});
+
+document.getElementById("btn-act-none").addEventListener("click", () => {
+  document.querySelectorAll("#activity-list input").forEach(cb => cb.checked = false);
+  state.activities = new Set();
+  redraw();
+});
+
+// ── Edge toggles ──────────────────────────────────────────────────────────────
+document.getElementById("tog-dfitem").addEventListener("change", function() {
+  setVisibility("dfItem", this.checked);
+});
+document.getElementById("tog-dfpo").addEventListener("change", function() {
+  setVisibility("dfPo", this.checked);
+});
+document.getElementById("tog-corr").addEventListener("change", function() {
+  setVisibility("corr", this.checked);
+});
+
+// ── Opacity sliders ───────────────────────────────────────────────────────────
+function bindSlider(id, key) {
+  const slider = document.getElementById(id);
+  const label  = document.getElementById(`${id}-val`);
+  slider.addEventListener("input", function() {
+    label.textContent = this.value;
+    setOpacity(key, parseFloat(this.value));
+  });
+}
+bindSlider("sl-dfitem", "dfItem");
+bindSlider("sl-dfpo",   "dfPo");
+bindSlider("sl-corr",   "corr");
+
+// ── Max items slider ──────────────────────────────────────────────────────────
+document.getElementById("sl-maxitems").addEventListener("input", function() {
+  const v = parseInt(this.value, 10);
+  document.getElementById("sl-maxitems-val").textContent = v === 0 ? "all" : v;
+  state.maxItems = v;
+  redraw();
+});
+
+// ── Zoom controls ─────────────────────────────────────────────────────────────
+document.getElementById("btn-fit").addEventListener("click", () => fitToView());
+document.getElementById("btn-reset-zoom").addEventListener("click", () => resetZoom());
+
+window.addEventListener("keydown", (event) => {
+  if (shouldIgnoreShortcut(event)) return;
+
+  const step = event.shiftKey ? 220 : 120;
+  switch (event.key) {
+    case "ArrowUp":
+      event.preventDefault();
+      panBy(0, step);
+      break;
+    case "ArrowDown":
+      event.preventDefault();
+      panBy(0, -step);
+      break;
+    case "ArrowLeft":
+      event.preventDefault();
+      panBy(step, 0);
+      break;
+    case "ArrowRight":
+      event.preventDefault();
+      panBy(-step, 0);
+      break;
+    case "+":
+    case "=":
+      event.preventDefault();
+      zoomBy(1.18);
+      break;
+    case "-":
+    case "_":
+      event.preventDefault();
+      zoomBy(1 / 1.18);
+      break;
+    case "0":
+      event.preventDefault();
+      resetZoom();
+      break;
+    case "f":
+    case "F":
+      event.preventDefault();
+      fitToView();
+      break;
+  }
+});
+
+// ── Clutter safeguards ────────────────────────────────────────────────────────
+/**
+ * Automatically limit max items shown when a PO has many items,
+ * to prevent unreadable graphs. Warns the user in the status bar.
+ * The user can always override via the slider.
+ */
+const CLUTTER_ITEM_THRESHOLD = 8;
+const CLUTTER_EVENT_THRESHOLD = 120;
+
+function autoClutterGuard(graph) {
+  const tooManyItems  = graph.items.length > CLUTTER_ITEM_THRESHOLD;
+  const tooManyEvents = graph.events.length > CLUTTER_EVENT_THRESHOLD;
+
+  // If the slider is at 0 (all) and there are too many items, suggest a limit
+  const slider = document.getElementById("sl-maxitems");
+  if (state.maxItems === 0 && tooManyItems) {
+    // Auto-cap at threshold but don't force — update slider to reflect
+    // We do NOT silently cap; instead we show a warning. User decides.
+    setStatusWarning(`⚠ ${graph.meta.totalItems} items — use "Max items" slider to reduce clutter`);
+  } else if (tooManyEvents) {
+    setStatusWarning(`⚠ ${graph.meta.filteredEvents} events shown — consider filtering activities`);
+  } else {
+    clearStatusWarning();
+  }
+}
+
+let _warnEl = null;
+function setStatusWarning(msg) {
+  if (!_warnEl) {
+    _warnEl = document.createElement("span");
+    _warnEl.style.cssText = "color:#f59e0b;font-size:10px;margin-left:8px;";
+    document.getElementById("statusbar").appendChild(_warnEl);
+  }
+  _warnEl.textContent = msg;
+}
+function clearStatusWarning() {
+  if (_warnEl) _warnEl.textContent = "";
+}
+
+// ── Main redraw ───────────────────────────────────────────────────────────────
+function redraw() {
+  if (!state.selectedPo) return;
+
+  const graph = getGraph(state.selectedPo, {
+    activities: state.activities,
+    maxItems:   state.maxItems,
+  });
+
+  autoClutterGuard(graph);
+  draw([graph], state.expandedItems);
+  updateStats(graph.meta);
+  updateStatusBar(graph);
+}
+
+function updateStats(meta) {
+  document.getElementById("stat-events").textContent  = `${meta.filteredEvents} / ${meta.totalEvents}`;
+  document.getElementById("stat-items").textContent   = `${meta.shownItems} / ${meta.totalItems}`;
+  document.getElementById("stat-dfitem").textContent  = meta.dfItemCount;
+  document.getElementById("stat-dfpo").textContent    = meta.dfPoCount;
+}
+
+function updateStatusBar(graph) {
+  document.getElementById("sb-po").textContent     = graph.po;
+  document.getElementById("sb-items").textContent  = graph.items.length;
+  document.getElementById("sb-events").textContent = graph.events.length;
+}
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+const tip = document.getElementById("tooltip");
+function showTooltip(html, x, y) {
+  tip.innerHTML = html;
+  // Keep tooltip within canvas bounds
+  const cw = document.getElementById("canvas-wrap").clientWidth;
+  const ch = document.getElementById("canvas-wrap").clientHeight;
+  const tw = 280, th = 120;
+  tip.style.left = Math.min(x + 14, cw - tw) + "px";
+  tip.style.top  = Math.min(y - 10, ch - th) + "px";
+  tip.classList.add("show");
+}
+function hideTooltip() { tip.classList.remove("show"); }
+
+// ── Event click detail ────────────────────────────────────────────────────────
+function onEventClick(eventData) {
+  // Could open a detail panel in future iterations
+  // For now: just log to console for development
+  if (eventData) console.log("Event selected:", eventData);
+}
+
+function onItemExpand(itemId) {
+  if (!itemId) return;
+  if (state.expandedItems.has(itemId)) state.expandedItems.delete(itemId);
+  else state.expandedItems.add(itemId);
+  redraw();
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function showLoading(on) {
+  document.getElementById("loading").classList.toggle("hidden", !on);
+}
+function showDropzone(on) {
+  document.getElementById("dropzone").classList.toggle("hidden", !on);
+  if (on) showMinimap(false);
+}
+function showMinimap(on) {
+  document.getElementById("minimap-wrap").classList.toggle("hidden", !on);
+}
+function shouldIgnoreShortcut(event) {
+  if (!state.selectedPo) return true;
+  if (event.ctrlKey || event.metaKey || event.altKey) return true;
+  const active = document.activeElement;
+  if (!active) return false;
+  const tag = active.tagName;
+  return active.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(tag);
+}
+
+// ── Resize handler ────────────────────────────────────────────────────────────
+window.addEventListener("resize", () => {
+  if (state.selectedPo) redraw();
+});
+</script>
+</body>
+</html>

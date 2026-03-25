@@ -3,47 +3,60 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EKG Layout — BPIC 2019</title>
+  <title>EKG Layout - BPIC 2019</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 </head>
 <body>
 
-<!-- ── Header ──────────────────────────────────────────────────────────────── -->
 <div id="header">
   <span class="header-title">EKG <span>Layout</span> Prototype</span>
   <div class="header-sep"></div>
   <span style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono)">
-    BPIC Challenge 2019 · Swim-lane + Temporal x-axis · Approach 1
+    BPIC Challenge 2019 · Swim-lane + Temporal x-axis · Overview + Focus
   </span>
-  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+  <div class="header-actions">
+    <div class="view-switch">
+      <button class="btn-small" id="btn-overview">Overview</button>
+      <button class="btn-small" id="btn-focus">Selected PO</button>
+    </div>
     <button class="btn-small" id="btn-fit">Fit view</button>
     <button class="btn-small" id="btn-reset-zoom">Reset zoom</button>
-    <button class="btn-small" id="btn-load-files">Load CSVs…</button>
+    <button class="btn-small" id="btn-load-files">Load CSVs...</button>
     <input type="file" id="file-input" accept=".csv" multiple style="display:none">
   </div>
 </div>
 
-<!-- ── Main ────────────────────────────────────────────────────────────────── -->
 <div id="main">
-
-  <!-- ── Side panel ──────────────────────────────────────────────────────── -->
   <div id="panel">
+    <div id="panel-view-tag">Community Overview</div>
 
-    <!-- PO selector -->
-    <div class="panel-section">
+    <div class="panel-section" data-scope="po">
       <div class="panel-section-title">Purchase Order</div>
-      <input class="search-box" id="po-search" type="text" placeholder="Search PO…">
+      <div class="community-summary" id="po-summary">
+        Select a PO to inspect its details, items, and event structure.
+      </div>
+      <input class="search-box" id="po-search" type="text" placeholder="Search PO...">
       <div class="po-list" id="po-list"></div>
     </div>
 
-    <!-- Edge visibility -->
-    <div class="panel-section">
+    <div class="panel-section" data-scope="community community-detail">
+      <div class="panel-section-title">Community Focus</div>
+      <div class="btn-row">
+        <button class="btn-small" id="btn-community-clear">All communities</button>
+      </div>
+      <div class="community-summary" id="community-summary">
+        Community overview is shown here. Click a community bubble to focus it.
+      </div>
+      <div class="community-list" id="community-list"></div>
+    </div>
+
+    <div class="panel-section" data-scope="community-detail po">
       <div class="panel-section-title">Edge types</div>
       <div class="toggle-row">
         <span class="toggle-label">
           <span class="swatch" style="background:rgba(36,52,73,0.55)"></span>
-          DF — item level
+          DF - item level
         </span>
         <label class="toggle">
           <input type="checkbox" id="tog-dfitem" checked>
@@ -53,7 +66,7 @@
       <div class="toggle-row">
         <span class="toggle-label">
           <span class="swatch" style="background:#2563eb"></span>
-          DF — PO level
+          DF - PO level
         </span>
         <label class="toggle">
           <input type="checkbox" id="tog-dfpo">
@@ -73,17 +86,26 @@
       <div class="toggle-row">
         <span class="toggle-label">
           <span class="swatch" style="background:rgba(15,118,110,0.5)"></span>
-          Resource nodes
+          Resources
         </span>
         <label class="toggle">
           <input type="checkbox" id="tog-resources">
           <div class="toggle-track"></div>
         </label>
       </div>
+      <div class="toggle-row">
+        <span class="toggle-label">
+          <span class="swatch" style="background:rgba(217,119,6,0.5)"></span>
+          Attributes
+        </span>
+        <label class="toggle">
+          <input type="checkbox" id="tog-attributes">
+          <div class="toggle-track"></div>
+        </label>
+      </div>
     </div>
 
-    <!-- Opacity sliders -->
-    <div class="panel-section">
+    <div class="panel-section" data-scope="po">
       <div class="panel-section-title">Edge opacity</div>
       <div class="slider-row">
         <span class="slider-label">DF (item)</span>
@@ -102,21 +124,28 @@
       </div>
     </div>
 
-    <!-- Item limit -->
-    <div class="panel-section">
+    <div class="panel-section" data-scope="po">
       <div class="panel-section-title">POItem limit</div>
       <div class="slider-row">
         <span class="slider-label">Max items shown</span>
         <input type="range" id="sl-maxitems" min="0" max="20" step="1" value="0">
         <span class="slider-val" id="sl-maxitems-val">all</span>
       </div>
-      <div style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.5">
+      <div id="maxitems-hint" style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.5">
         Limits items to avoid visual overload. 0 = show all.
       </div>
     </div>
 
-    <!-- Activity filter -->
-    <div class="panel-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+    <div class="panel-section" data-scope="community community-detail">
+      <div class="panel-section-title">Community Filters</div>
+      <div class="slider-row" style="margin-top:10px">
+        <span class="slider-label">Min similarity</span>
+        <input type="range" id="sl-overview-weight" min="0.2" max="0.8" step="0.05" value="0.35">
+        <span class="slider-val" id="sl-overview-weight-val">0.35</span>
+      </div>
+    </div>
+
+    <div class="panel-section" data-scope="community community-detail po" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
       <div class="panel-section-title">Activities</div>
       <div class="encoding-hint">
         Event fill = activity<br>
@@ -129,120 +158,111 @@
       <div class="activity-list" id="activity-list"></div>
     </div>
 
-    <!-- Stats -->
     <div id="stats">
-      <div class="stat-row">Events shown <span id="stat-events">—</span></div>
-      <div class="stat-row">POItems shown <span id="stat-items">—</span></div>
-      <div class="stat-row">DF edges (item) <span id="stat-dfitem">—</span></div>
-      <div class="stat-row">DF edges (PO) <span id="stat-dfpo">—</span></div>
+      <div class="stat-row"><span id="stat-scope-label">Scope</span><span id="stat-scope">-</span></div>
+      <div class="stat-row"><span id="stat-events-label">Events shown</span><span id="stat-events">-</span></div>
+      <div class="stat-row"><span id="stat-items-label">POItems shown</span><span id="stat-items">-</span></div>
+      <div class="stat-row"><span id="stat-dfitem-label">DF edges (item)</span><span id="stat-dfitem">-</span></div>
+      <div class="stat-row"><span id="stat-dfpo-label">DF edges (PO)</span><span id="stat-dfpo">-</span></div>
     </div>
+  </div>
 
-  </div><!-- /panel -->
-
-  <!-- ── Canvas ────────────────────────────────────────────────────────────── -->
   <div id="canvas-wrap">
     <svg id="canvas"></svg>
-    <div id="minimap-wrap" class="hidden">
-      <div class="minimap-title">Navigator</div>
-      <svg id="minimap"></svg>
-    </div>
 
-    <!-- Drop zone (shown when no data) -->
     <div id="dropzone">
       <div class="drop-card">
         <h2>Load your EKG data</h2>
         <p>
           Run the preprocessing script to generate your CSVs, then load them here.<br><br>
-          <b>Option 1 — Local server</b> (recommended):<br>
+          <b>Option 1 - Local server</b> (recommended):<br>
           Serve the repo root with <code>npx serve .</code> and open
           <code>viewer/index.html</code>. The CSVs in <code>output/</code> load automatically.<br><br>
-          <b>Option 2 — File picker</b>:<br>
-          Click the button below and select all six <code>.csv</code> files from your
+          <b>Option 2 - File picker</b>:<br>
+          Click the button below and select all four <code>.csv</code> files from your
           <code>output/</code> folder at once.
         </p>
-        <button class="drop-btn" id="btn-drop-load">Select CSV files…</button>
+        <button class="drop-btn" id="btn-drop-load">Select CSV files...</button>
       </div>
     </div>
 
-    <!-- Loading overlay -->
-    <div id="loading" class="hidden">Loading data…</div>
-
-    <!-- Tooltip -->
+    <div id="loading" class="hidden">Loading data...</div>
     <div id="tooltip"></div>
+  </div>
+</div>
 
-  </div><!-- /canvas-wrap -->
-</div><!-- /main -->
-
-<!-- ── Status bar ───────────────────────────────────────────────────────────── -->
 <div id="statusbar">
-  <span class="status-item">PO: <b id="sb-po">—</b></span>
-  <span class="status-item">Items: <b id="sb-items">—</b></span>
-  <span class="status-item">Events: <b id="sb-events">—</b></span>
+  <span class="status-item">View: <b id="sb-view">-</b></span>
+  <span class="status-item">PO: <b id="sb-po">-</b></span>
+  <span class="status-item">Items: <b id="sb-items">-</b></span>
+  <span class="status-item">Events: <b id="sb-events">-</b></span>
   <span class="status-hint">Fill = activity · Border = resource · Scroll or +/- zoom · Drag or arrows pan · F fit · 0 reset</span>
 </div>
 
 <script type="module">
 import {
-  buildStore, getStore, getGraph,
-  getResourcesForPo, getActivityCountsForPo,
+  buildStore, getStore, getGraph, getOverviewGraph, getActivityCountsForPo,
   loadFromServer, loadFromFiles,
 } from "./filters.js";
 
 import {
   init as renderInit, draw,
   setVisibility, setOpacity,
-  fitToView, resetZoom,
+  fitToView,
   panBy, zoomBy,
 } from "./render.js";
 
-// ── App state ─────────────────────────────────────────────────────────────────
+const OVERVIEW_MIN_SCALE = 0.01;
+const CLUTTER_ITEM_THRESHOLD = 8;
+const CLUTTER_EVENT_THRESHOLD = 120;
+
 const state = {
-  selectedPo:   null,
-  activities:   null,   // null = all; Set<string> = whitelist
-  resource:     null,
-  maxItems:     0,
+  viewMode: "overview",
+  selectedPo: null,
+  focusedCommunity: null,
+  activities: null,
+  resource: null,
+  maxItems: 0,
+  overviewMinEdgeWeight: 0.35,
   expandedItems: new Set(),
-  fitNextDraw:  true,
+  fitNextDraw: true,
 };
 
-// ── Init renderer ─────────────────────────────────────────────────────────────
 renderInit(
   "canvas",
   showTooltip,
   hideTooltip,
   onItemExpand,
-  "minimap",
+  onPoSelect,
+  onCommunitySelect,
 );
 
-// ── Load data ─────────────────────────────────────────────────────────────────
+tryLoad();
+
 async function tryLoad() {
   showLoading(true);
-  // Try server first
   const serverSources = await loadFromServer("../output");
   if (serverSources) {
     buildStore(serverSources);
     onDataLoaded();
   } else {
-    // Show drop zone
     showDropzone(true);
   }
   showLoading(false);
 }
 
-tryLoad();
-
-// File picker (header button + drop zone button)
 function openFilePicker() {
   document.getElementById("file-input").click();
 }
+
 document.getElementById("btn-load-files").addEventListener("click", openFilePicker);
 document.getElementById("btn-drop-load").addEventListener("click", openFilePicker);
 
-document.getElementById("file-input").addEventListener("change", async (e) => {
-  if (!e.target.files.length) return;
+document.getElementById("file-input").addEventListener("change", async event => {
+  if (!event.target.files.length) return;
   showLoading(true);
   try {
-    const sources = await loadFromFiles(e.target.files);
+    const sources = await loadFromFiles(event.target.files);
     buildStore(sources);
     onDataLoaded();
   } catch (err) {
@@ -253,15 +273,20 @@ document.getElementById("file-input").addEventListener("change", async (e) => {
 
 function onDataLoaded() {
   showDropzone(false);
-  showMinimap(true);
   const store = getStore();
   buildPoList(store.poList);
-  // Auto-select PO with most items
-  const firstPo = store.poList[0]?.id;
-  if (firstPo) selectPo(firstPo);
+  state.selectedPo = store.poList[0]?.id ?? null;
+  state.viewMode = "overview";
+  state.focusedCommunity = null;
+  state.activities = null;
+  state.expandedItems = new Set();
+  state.fitNextDraw = true;
+  updatePoSelection();
+  updateModeUi();
+  buildActivityFilter();
+  redraw();
 }
 
-// ── PO list ───────────────────────────────────────────────────────────────────
 function buildPoList(poList) {
   const container = document.getElementById("po-list");
   container.innerHTML = "";
@@ -273,12 +298,11 @@ function buildPoList(poList) {
       <span class="po-id">${po.id}</span>
       <span class="po-meta">${po.itemCount}i · ${po.eventCount}e</span>
     `;
-    el.addEventListener("click", () => selectPo(po.id));
+    el.addEventListener("click", () => focusPo(po.id));
     container.appendChild(el);
   });
 }
 
-// PO search filter
 document.getElementById("po-search").addEventListener("input", function() {
   const q = this.value.toLowerCase();
   document.querySelectorAll(".po-item").forEach(el => {
@@ -286,27 +310,113 @@ document.getElementById("po-search").addEventListener("input", function() {
   });
 });
 
-function selectPo(poId) {
+document.getElementById("btn-overview").addEventListener("click", showOverview);
+document.getElementById("btn-focus").addEventListener("click", () => {
+  if (state.selectedPo) focusPo(state.selectedPo, { resetFilters: false });
+});
+document.getElementById("btn-community-clear").addEventListener("click", clearCommunityFocus);
+
+function focusPo(poId, options = {}) {
+  if (!poId) return;
+  const resetFilters = options.resetFilters ?? true;
+  const changingPo = state.selectedPo !== poId;
   state.selectedPo = poId;
-  state.activities = null; // reset activity filter on PO change
+  state.viewMode = "focus";
   state.expandedItems = new Set();
   state.fitNextDraw = true;
-
-  // Update UI selection
-  document.querySelectorAll(".po-item").forEach(el => {
-    el.classList.toggle("active", el.dataset.po === poId);
-  });
-  // Scroll selected item into view
-  const active = document.querySelector(".po-item.active");
-  active?.scrollIntoView({ block: "nearest" });
-
-  buildActivityFilter(poId);
+  if (resetFilters && changingPo) state.activities = null;
+  updatePoSelection();
+  updateModeUi();
+  buildActivityFilter();
   redraw();
 }
 
-// ── Activity filter ───────────────────────────────────────────────────────────
-function buildActivityFilter(poId) {
-  const counts = getActivityCountsForPo(poId);
+function showOverview() {
+  if (!hasDataLoaded()) return;
+  state.viewMode = "overview";
+  state.expandedItems = new Set();
+  state.fitNextDraw = true;
+  updateModeUi();
+  buildActivityFilter();
+  redraw();
+}
+
+function onPoSelect(poId) {
+  focusPo(poId);
+}
+
+function onCommunitySelect(communityId) {
+  if (!communityId) return;
+  state.viewMode = "overview";
+  state.focusedCommunity = communityId;
+  state.expandedItems = new Set();
+  state.fitNextDraw = true;
+  updateModeUi();
+  buildActivityFilter();
+  redraw();
+}
+
+function clearCommunityFocus() {
+  if (state.focusedCommunity === null) return;
+  state.focusedCommunity = null;
+  state.fitNextDraw = true;
+  updateModeUi();
+  buildActivityFilter();
+  redraw();
+}
+
+function updatePoSelection() {
+  document.querySelectorAll(".po-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.po === state.selectedPo);
+  });
+  const active = document.querySelector(".po-item.active");
+  active?.scrollIntoView({ block: "nearest" });
+}
+
+function updateModeUi() {
+  const overviewBtn = document.getElementById("btn-overview");
+  const focusBtn = document.getElementById("btn-focus");
+  const maxItems = document.getElementById("sl-maxitems");
+  const maxItemsHint = document.getElementById("maxitems-hint");
+  const clearCommunityBtn = document.getElementById("btn-community-clear");
+  const overviewWeight = document.getElementById("sl-overview-weight");
+  const resourceToggle = document.getElementById("tog-resources");
+  const attributeToggle = document.getElementById("tog-attributes");
+  const inOverview = state.viewMode === "overview";
+  const scope = getSidebarScope();
+  const panelTag = document.getElementById("panel-view-tag");
+
+  overviewBtn.classList.toggle("active", inOverview);
+  focusBtn.classList.toggle("active", !inOverview);
+  focusBtn.disabled = !state.selectedPo;
+  maxItems.disabled = inOverview;
+  clearCommunityBtn.disabled = !inOverview || !state.focusedCommunity;
+  overviewWeight.disabled = !inOverview;
+  resourceToggle.disabled = !inOverview || !state.focusedCommunity;
+  attributeToggle.disabled = !inOverview || !state.focusedCommunity;
+  document.querySelectorAll("#panel [data-scope]").forEach(section => {
+    const scopes = (section.dataset.scope ?? "").split(/\s+/).filter(Boolean);
+    section.classList.toggle("hidden-by-scope", !scopes.includes(scope));
+  });
+  panelTag.textContent = scope === "po"
+    ? "PO Detail"
+    : scope === "community-detail"
+      ? "Community Detail"
+      : "Community Overview";
+  maxItemsHint.textContent = inOverview
+    ? (state.focusedCommunity
+        ? "Focused community view: resources and attributes appear on demand, and case links stay local."
+        : "Overview first: start with communities, then click one to reveal its cases, resources, and attributes.")
+    : "Limits items to avoid visual overload. 0 = show all.";
+}
+
+function getSidebarScope() {
+  if (state.viewMode === "focus") return "po";
+  return state.focusedCommunity ? "community-detail" : "community";
+}
+
+function buildActivityFilter() {
+  const counts = getCurrentActivityCounts();
   const activities = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   const container = document.getElementById("activity-list");
   container.innerHTML = "";
@@ -327,9 +437,31 @@ function buildActivityFilter(poId) {
   });
 }
 
+function getCurrentActivityCounts() {
+  if (state.viewMode === "focus" && state.selectedPo) {
+    return getActivityCountsForPo(state.selectedPo);
+  }
+  if (state.viewMode === "overview" && state.focusedCommunity) {
+    const counts = {};
+    const store = getStore();
+    store.poList.forEach(po => {
+      if (store.communityByPoId?.[po.id]?.id !== state.focusedCommunity) return;
+      (store.eventsByPo[po.id] ?? []).forEach(event => {
+        counts[event.activity] = (counts[event.activity] ?? 0) + 1;
+      });
+    });
+    return counts;
+  }
+  const counts = {};
+  getStore().events.forEach(event => {
+    counts[event.activity] = (counts[event.activity] ?? 0) + 1;
+  });
+  return counts;
+}
+
 function onActivityChange() {
   const checked = [...document.querySelectorAll("#activity-list input:checked")];
-  const all     = [...document.querySelectorAll("#activity-list input")];
+  const all = [...document.querySelectorAll("#activity-list input")];
   state.activities = checked.length === all.length
     ? null
     : new Set(checked.map(cb => cb.dataset.act));
@@ -337,18 +469,17 @@ function onActivityChange() {
 }
 
 document.getElementById("btn-act-all").addEventListener("click", () => {
-  document.querySelectorAll("#activity-list input").forEach(cb => cb.checked = true);
+  document.querySelectorAll("#activity-list input").forEach(cb => { cb.checked = true; });
   state.activities = null;
   redraw();
 });
 
 document.getElementById("btn-act-none").addEventListener("click", () => {
-  document.querySelectorAll("#activity-list input").forEach(cb => cb.checked = false);
+  document.querySelectorAll("#activity-list input").forEach(cb => { cb.checked = false; });
   state.activities = new Set();
   redraw();
 });
 
-// ── Edge toggles ──────────────────────────────────────────────────────────────
 document.getElementById("tog-dfitem").addEventListener("change", function() {
   setVisibility("dfItem", this.checked);
 });
@@ -361,33 +492,40 @@ document.getElementById("tog-corr").addEventListener("change", function() {
 document.getElementById("tog-resources").addEventListener("change", function() {
   setVisibility("resources", this.checked);
 });
+document.getElementById("tog-attributes").addEventListener("change", function() {
+  setVisibility("attributes", this.checked);
+});
 
-// ── Opacity sliders ───────────────────────────────────────────────────────────
 function bindSlider(id, key) {
   const slider = document.getElementById(id);
-  const label  = document.getElementById(`${id}-val`);
+  const label = document.getElementById(`${id}-val`);
   slider.addEventListener("input", function() {
     label.textContent = this.value;
     setOpacity(key, parseFloat(this.value));
   });
 }
 bindSlider("sl-dfitem", "dfItem");
-bindSlider("sl-dfpo",   "dfPo");
-bindSlider("sl-corr",   "corr");
+bindSlider("sl-dfpo", "dfPo");
+bindSlider("sl-corr", "corr");
 
-// ── Max items slider ──────────────────────────────────────────────────────────
 document.getElementById("sl-maxitems").addEventListener("input", function() {
-  const v = parseInt(this.value, 10);
-  document.getElementById("sl-maxitems-val").textContent = v === 0 ? "all" : v;
-  state.maxItems = v;
+  const value = parseInt(this.value, 10);
+  document.getElementById("sl-maxitems-val").textContent = value === 0 ? "all" : value;
+  state.maxItems = value;
   redraw();
 });
 
-// ── Zoom controls ─────────────────────────────────────────────────────────────
-document.getElementById("btn-fit").addEventListener("click", () => fitToView());
-document.getElementById("btn-reset-zoom").addEventListener("click", () => resetZoom());
+document.getElementById("sl-overview-weight").addEventListener("input", function() {
+  const value = parseFloat(this.value);
+  document.getElementById("sl-overview-weight-val").textContent = value.toFixed(2);
+  state.overviewMinEdgeWeight = value;
+  if (state.viewMode === "overview") redraw();
+});
 
-window.addEventListener("keydown", (event) => {
+document.getElementById("btn-fit").addEventListener("click", fitCurrentView);
+document.getElementById("btn-reset-zoom").addEventListener("click", fitCurrentView);
+
+window.addEventListener("keydown", event => {
   if (shouldIgnoreShortcut(event)) return;
 
   const step = event.shiftKey ? 220 : 120;
@@ -420,37 +558,24 @@ window.addEventListener("keydown", (event) => {
       break;
     case "0":
       event.preventDefault();
-      resetZoom();
+      fitCurrentView();
       break;
     case "f":
     case "F":
       event.preventDefault();
-      fitToView();
+      fitCurrentView();
       break;
   }
 });
 
-// ── Clutter safeguards ────────────────────────────────────────────────────────
-/**
- * Automatically limit max items shown when a PO has many items,
- * to prevent unreadable graphs. Warns the user in the status bar.
- * The user can always override via the slider.
- */
-const CLUTTER_ITEM_THRESHOLD = 8;
-const CLUTTER_EVENT_THRESHOLD = 120;
-
 function autoClutterGuard(graph) {
-  const tooManyItems  = graph.items.length > CLUTTER_ITEM_THRESHOLD;
+  const tooManyItems = graph.items.length > CLUTTER_ITEM_THRESHOLD;
   const tooManyEvents = graph.events.length > CLUTTER_EVENT_THRESHOLD;
 
-  // If the slider is at 0 (all) and there are too many items, suggest a limit
-  const slider = document.getElementById("sl-maxitems");
   if (state.maxItems === 0 && tooManyItems) {
-    // Auto-cap at threshold but don't force — update slider to reflect
-    // We do NOT silently cap; instead we show a warning. User decides.
-    setStatusWarning(`⚠ ${graph.meta.totalItems} items — use "Max items" slider to reduce clutter`);
+    setStatusWarning(`Warning: ${graph.meta.totalItems} items - use "Max items" slider to reduce clutter`);
   } else if (tooManyEvents) {
-    setStatusWarning(`⚠ ${graph.meta.filteredEvents} events shown — consider filtering activities`);
+    setStatusWarning(`Warning: ${graph.meta.filteredEvents} events shown - consider filtering activities`);
   } else {
     clearStatusWarning();
   }
@@ -469,76 +594,237 @@ function clearStatusWarning() {
   if (_warnEl) _warnEl.textContent = "";
 }
 
-// ── Main redraw ───────────────────────────────────────────────────────────────
-function redraw() {
-  if (!state.selectedPo) return;
+function updateCommunityPanel(graph) {
+  const summaryEl = document.getElementById("community-summary");
+  const listEl = document.getElementById("community-list");
 
-  const graph = getGraph(state.selectedPo, {
-    activities: state.activities,
-    maxItems:   state.maxItems,
+  if (state.viewMode !== "overview" || !graph) {
+    summaryEl.textContent = "Community overview is available in overview mode.";
+    listEl.innerHTML = "";
+    return;
+  }
+
+  const clusters = graph.clusters ?? [];
+  listEl.innerHTML = "";
+  clusters.forEach(cluster => {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = `community-item${cluster.id === state.focusedCommunity ? " active" : ""}`;
+    el.innerHTML = `
+      <span class="community-item-title">${_escapeHtml(cluster.label)}</span>
+      <span class="community-item-meta">${cluster.count} cases</span>
+    `;
+    el.addEventListener("click", () => onCommunitySelect(cluster.id));
+    listEl.appendChild(el);
   });
 
-  autoClutterGuard(graph);
-  draw([graph], state.expandedItems, { fit: state.fitNextDraw });
+  if (!state.focusedCommunity) {
+    summaryEl.innerHTML = `
+      <div><b>${clusters.length}</b> communities visible</div>
+      <div style="margin-top:4px">Start from the aggregate map, then click a community to reveal its cases and context.</div>
+    `;
+    return;
+  }
+
+  const active = clusters.find(cluster => cluster.id === state.focusedCommunity) ?? clusters[0];
+  if (!active) {
+    summaryEl.textContent = "No community matches the current filters.";
+    return;
+  }
+
+  summaryEl.innerHTML = `
+    <div><b>${_escapeHtml(active.label)}</b>${active.code ? ` <span style="color:var(--text-dim)">(${_escapeHtml(active.code)})</span>` : ""}</div>
+    <div style="margin-top:4px">${active.count} cases • ${active.hint || "focused community"}</div>
+    <div class="community-chip-group">
+      ${(active.resources ?? []).slice(0, 8).map(item => `<span class="community-chip resource">${_escapeHtml(item.shortLabel)} (${item.count})</span>`).join("") || '<span class="community-chip empty">No resources</span>'}
+    </div>
+    <div class="community-chip-group">
+      ${(active.attributes ?? []).slice(0, 8).map(item => `<span class="community-chip attribute">${_escapeHtml(item.shortLabel)} (${item.count})</span>`).join("") || '<span class="community-chip empty">No attributes</span>'}
+    </div>
+  `;
+}
+
+function updatePoSummary() {
+  const summaryEl = document.getElementById("po-summary");
+  if (!summaryEl) return;
+  if (state.viewMode !== "focus" || !state.selectedPo) {
+    summaryEl.textContent = "Select a PO to inspect its details, items, and event structure.";
+    return;
+  }
+
+  const summary = getStore().poSummaryById?.[state.selectedPo];
+  if (!summary) {
+    summaryEl.textContent = "No PO details available.";
+    return;
+  }
+
+  const attrs = Object.entries(summary.attrs ?? {})
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(" • ");
+
+  summaryEl.innerHTML = `
+    <div><b>${_escapeHtml(summary.id)}</b></div>
+    <div style="margin-top:4px">${summary.eventCount} events • ${summary.itemCount} items</div>
+    <div style="margin-top:4px">${summary.topResources?.length ? `Resources: ${summary.topResources.map(_escapeHtml).join(", ")}` : "No named resources"}</div>
+    ${attrs ? `<div style="margin-top:4px">${_escapeHtml(attrs)}</div>` : ""}
+  `;
+}
+
+function redraw() {
+  if (!hasDataLoaded()) return;
+
+  const graphs = state.viewMode === "overview"
+    ? [getOverviewGraph({
+        activities: state.activities,
+        communityId: state.focusedCommunity,
+        minEdgeWeight: state.overviewMinEdgeWeight,
+      })]
+    : [getGraph(state.selectedPo, {
+        activities: state.activities,
+        maxItems: state.maxItems,
+      })];
+
+  if (state.viewMode === "focus") autoClutterGuard(graphs[0]);
+  else clearStatusWarning();
+
+  draw(graphs, state.viewMode === "overview" ? new Set() : state.expandedItems, {
+    fit: state.fitNextDraw,
+    minScale: state.viewMode === "overview" ? OVERVIEW_MIN_SCALE : undefined,
+  });
   state.fitNextDraw = false;
-  updateStats(graph.meta);
-  updateStatusBar(graph);
+  updatePoSummary();
+  updateCommunityPanel(graphs[0]);
+  updateStats(graphs);
+  updateStatusBar(graphs);
 }
 
-function updateStats(meta) {
-  document.getElementById("stat-events").textContent  = `${meta.filteredEvents} / ${meta.totalEvents}`;
-  document.getElementById("stat-items").textContent   = `${meta.shownItems} / ${meta.totalItems}`;
-  document.getElementById("stat-dfitem").textContent  = meta.dfItemCount;
-  document.getElementById("stat-dfpo").textContent    = meta.dfPoCount;
+function summarizeGraphs(graphs) {
+  if (state.viewMode === "overview") {
+    const meta = graphs[0]?.meta ?? {};
+    return {
+      poCount: meta.poCount ?? 0,
+      clusterCount: meta.clusterCount ?? 0,
+      totalEvents: meta.totalEvents ?? 0,
+      filteredEvents: meta.filteredEvents ?? 0,
+      totalItems: meta.totalItems ?? 0,
+      shownItems: meta.shownItems ?? 0,
+      dfItemCount: meta.dfItemCount ?? 0,
+      dfPoCount: meta.dfPoCount ?? 0,
+      overviewEdgeCount: meta.overviewEdgeCount ?? 0,
+    };
+  }
+
+  return graphs.reduce((summary, graph) => {
+    summary.poCount += 1;
+    summary.totalEvents += graph.meta.totalEvents;
+    summary.filteredEvents += graph.meta.filteredEvents;
+    summary.totalItems += graph.meta.totalItems;
+    summary.shownItems += graph.meta.shownItems;
+    summary.dfItemCount += graph.meta.dfItemCount;
+    summary.dfPoCount += graph.meta.dfPoCount;
+    return summary;
+  }, {
+    poCount: 0,
+    totalEvents: 0,
+    filteredEvents: 0,
+    totalItems: 0,
+    shownItems: 0,
+    dfItemCount: 0,
+    dfPoCount: 0,
+    overviewEdgeCount: 0,
+    clusterCount: 0,
+  });
 }
 
-function updateStatusBar(graph) {
-  document.getElementById("sb-po").textContent     = graph.po;
-  document.getElementById("sb-items").textContent  = graph.items.length;
-  document.getElementById("sb-events").textContent = graph.events.length;
+function updateStats(graphs) {
+  const summary = summarizeGraphs(graphs);
+  document.getElementById("stat-scope-label").textContent = state.viewMode === "overview" ? "POs shown" : "Scope";
+  if (state.viewMode === "overview") {
+    document.getElementById("stat-scope-label").textContent = "Cases shown";
+  }
+  document.getElementById("stat-events-label").textContent = "Events shown";
+  document.getElementById("stat-items-label").textContent = "POItems shown";
+  document.getElementById("stat-dfitem-label").textContent = state.viewMode === "overview"
+    ? (state.focusedCommunity ? "Case links" : "Community links")
+    : "DF edges (item)";
+  document.getElementById("stat-dfpo-label").textContent = state.viewMode === "overview" ? "Clusters" : "DF edges (PO)";
+  document.getElementById("stat-scope").textContent = state.viewMode === "overview"
+    ? summary.poCount
+    : graphs[0]?.po ?? "-";
+  document.getElementById("stat-events").textContent = `${summary.filteredEvents} / ${summary.totalEvents}`;
+  document.getElementById("stat-items").textContent = `${summary.shownItems} / ${summary.totalItems}`;
+  document.getElementById("stat-dfitem").textContent = state.viewMode === "overview"
+    ? (state.focusedCommunity ? summary.overviewEdgeCount : (graphs[0]?.meta?.overviewCommunityEdgeCount ?? 0))
+    : summary.dfItemCount;
+  document.getElementById("stat-dfpo").textContent = state.viewMode === "overview"
+    ? summary.clusterCount
+    : summary.dfPoCount;
 }
 
-// ── Tooltip ───────────────────────────────────────────────────────────────────
+function updateStatusBar(graphs) {
+  const summary = summarizeGraphs(graphs);
+  document.getElementById("sb-view").textContent = state.viewMode;
+  document.getElementById("sb-po").textContent = state.viewMode === "overview"
+    ? (state.focusedCommunity
+        ? graphs[0]?.clusters?.find(cluster => cluster.id === state.focusedCommunity)?.label ?? `community (${summary.poCount})`
+        : `all (${summary.poCount})`)
+    : graphs[0]?.po ?? "-";
+  document.getElementById("sb-items").textContent = summary.shownItems;
+  document.getElementById("sb-events").textContent = summary.filteredEvents;
+}
+
+function _escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 const tip = document.getElementById("tooltip");
 function showTooltip(html, x, y) {
   tip.innerHTML = html;
-  // Keep tooltip within canvas bounds
   const cw = document.getElementById("canvas-wrap").clientWidth;
   const ch = document.getElementById("canvas-wrap").clientHeight;
-  const tw = 280, th = 120;
+  const tw = 280;
+  const th = 120;
   tip.style.left = Math.min(x + 14, cw - tw) + "px";
-  tip.style.top  = Math.min(y - 10, ch - th) + "px";
+  tip.style.top = Math.min(y - 10, ch - th) + "px";
   tip.classList.add("show");
 }
-function hideTooltip() { tip.classList.remove("show"); }
-
-// ── Event click detail ────────────────────────────────────────────────────────
-function onEventClick(eventData) {
-  // Could open a detail panel in future iterations
-  // For now: just log to console for development
-  if (eventData) console.log("Event selected:", eventData);
+function hideTooltip() {
+  tip.classList.remove("show");
 }
 
 function onItemExpand(itemId) {
-  if (!itemId) return;
+  if (state.viewMode !== "focus" || !itemId) return;
   if (state.expandedItems.has(itemId)) state.expandedItems.delete(itemId);
   else state.expandedItems.add(itemId);
   redraw();
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────────
 function showLoading(on) {
   document.getElementById("loading").classList.toggle("hidden", !on);
 }
 function showDropzone(on) {
   document.getElementById("dropzone").classList.toggle("hidden", !on);
-  if (on) showMinimap(false);
 }
-function showMinimap(on) {
-  document.getElementById("minimap-wrap").classList.toggle("hidden", !on);
+
+function fitCurrentView() {
+  fitToView(undefined, {
+    minScale: state.viewMode === "overview" ? OVERVIEW_MIN_SCALE : undefined,
+  });
 }
+
+function hasDataLoaded() {
+  try {
+    return getStore().poList.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function shouldIgnoreShortcut(event) {
-  if (!state.selectedPo) return true;
+  if (!hasDataLoaded()) return true;
   if (event.ctrlKey || event.metaKey || event.altKey) return true;
   const active = document.activeElement;
   if (!active) return false;
@@ -546,12 +832,10 @@ function shouldIgnoreShortcut(event) {
   return active.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(tag);
 }
 
-// ── Resize handler ────────────────────────────────────────────────────────────
 window.addEventListener("resize", () => {
-  if (state.selectedPo) {
-    state.fitNextDraw = true;
-    redraw();
-  }
+  if (!hasDataLoaded()) return;
+  state.fitNextDraw = true;
+  redraw();
 });
 </script>
 </body>

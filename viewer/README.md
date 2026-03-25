@@ -2,6 +2,10 @@
 
 Interactive swim-lane layout prototype for Event Knowledge Graphs, built with D3.js.
 
+The viewer now supports a two-stage exploration flow:
+- `Overview` shows a case meta-graph, where purchase orders are connected through a generic k-nearest-neighbor similarity model built from activity profile, resource overlap, stable context attributes, temporal proximity, and case size. Each detected community also exposes its participating resources and stable attributes as satellite nodes.
+- `Selected PO` reuses the same left-to-right scaffold for one PO, then progressively reveals POItems and timelines for detail without switching to a different visual grammar.
+
 ## File structure
 
 ```
@@ -38,6 +42,7 @@ Click "Select CSV files…" and select all four CSVs from `output/` at once.
 | Control | Description |
 |---|---|
 | PO selector | Click any PO in the list to visualise it |
+| Overview / Selected PO | Toggle between full-graph overview and detailed PO view |
 | PO search | Filter the PO list by ID |
 | DF (item) toggle | Show/hide directly-follows edges within each POItem |
 | DF (PO) toggle | Show/hide cross-item directly-follows arcs |
@@ -58,3 +63,7 @@ The viewer automatically warns when:
 - More than 120 events are shown after filtering (use activity filter)
 
 CORR edges are hidden by default as they are the largest source of visual noise.
+
+## Layout rationale
+
+The overview is aggregate-first on purpose. Showing every event for every PO at once destroys readability, so the global mode derives a sparse case-similarity network, detects communities with weighted label propagation, and places those communities as stable bubbles in a deterministic spiral. Resources and stable attributes are shown as community satellites so the process context is visible immediately. Clicking a PO opens the detailed swim-lane view with the same anchors (`PO -> item lane -> timeline`), which preserves mental continuity and keeps navigation smooth.

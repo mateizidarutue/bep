@@ -18,7 +18,6 @@ import {
 } from "./layout.js";
 
 let svg, gRoot, zoom;
-let miniSvg, miniRoot, miniViewport;
 let _cb    = {};
 let _graphs   = [];
 let _expanded = new Set();
@@ -26,18 +25,27 @@ let _currentTransform = null;
 let _lastTotalHeight = 0;
 let _lastContentBounds = null;
 
-const vis = { dfItem: true, dfPo: false, corr: false, resources: false };
+const vis = { dfItem: true, dfPo: false, corr: false, resources: false, attributes: false };
 const opa = { dfItem: 0.7, dfPo: 0.2, corr: 0.2 };
-const FIT_PAD_X = 84;
-const FIT_PAD_Y = 64;
-const FIT_MAX_SCALE = 1.4;
-const FIT_READABLE_MIN_SCALE = 0.32;
+const FIT_PAD_X = 52;
+const FIT_PAD_Y = 44;
+const FIT_MAX_SCALE = 1.65;
+const FIT_READABLE_MIN_SCALE = 0.28;
 const CAMERA_EASE_MS = 420;
-const MINIMAP_PAD = 28;
+const COMMUNITY_PALETTE = [
+  [37, 99, 235],
+  [14, 116, 144],
+  [5, 150, 105],
+  [217, 119, 6],
+  [220, 38, 38],
+  [124, 58, 237],
+  [8, 145, 178],
+  [22, 163, 74],
+];
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-export function init(svgId, onTooltipShow, onTooltipHide, onItemExpand, minimapId = null) {
+export function init(svgId, onTooltipShow, onTooltipHide, onItemExpand, onPoSelect, onCommunitySelect) {
   svg   = d3.select(`#${svgId}`);
   gRoot = svg.append("g").attr("class", "root");
   _currentTransform = d3.zoomIdentity;
@@ -48,23 +56,11 @@ export function init(svgId, onTooltipShow, onTooltipHide, onItemExpand, minimapI
     .on("zoom", e => {
       _currentTransform = e.transform;
       gRoot.attr("transform", _currentTransform);
-      _updateMinimapViewport();
     });
   svg.call(zoom);
   svg.on("dblclick.zoom", null);
 
-  if (minimapId) {
-    miniSvg = d3.select(`#${minimapId}`);
-    miniSvg.selectAll("*").remove();
-    miniRoot = miniSvg.append("g").attr("class", "minimap-root");
-    miniViewport = miniSvg.append("rect")
-      .attr("class", "minimap-viewport")
-      .attr("rx", 14)
-      .attr("ry", 14);
-    miniSvg.on("click", _onMinimapClick);
-  }
-
-  _cb = { onTooltipShow, onTooltipHide, onItemExpand };
+  _cb = { onTooltipShow, onTooltipHide, onItemExpand, onPoSelect, onCommunitySelect };
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -81,6 +77,7 @@ export function draw(graphs, expanded, options = {}) {
 
   // Painter layers: back → front
   const lBg     = gRoot.append("g").attr("class", "l-bg");
+  const lMeta   = gRoot.append("g").attr("class", "l-meta");
   const lDfPo   = gRoot.append("g").attr("class", "l-dfpo");
   const lCorr   = gRoot.append("g").attr("class", "l-corr");
   const lRes    = gRoot.append("g").attr("class", "l-resources");
@@ -88,37 +85,40 @@ export function draw(graphs, expanded, options = {}) {
   const lNodes  = gRoot.append("g").attr("class", "l-nodes");
   const lLabels = gRoot.append("g").attr("class", "l-labels");
 
-  layout.poBlocks.forEach(block =>
-    _drawBlock(block, lBg, lDfPo, lCorr, lRes, lDfItem, lNodes, lLabels)
-  );
+  if (layout.overviewNetwork) {
+    _drawOverviewNetwork(layout.network, lBg, lMeta, lNodes, lLabels);
+  } else {
+    layout.poBlocks.forEach(block =>
+      _drawBlock(block, lBg, lDfPo, lCorr, lRes, lDfItem, lNodes, lLabels)
+    );
+  }
 
   _lastTotalHeight = layout.totalHeight;
   _applyVisibility();
   _updateTranslateExtent(layout.totalHeight);
-  _refreshMinimap();
   if (options.fit ?? true) {
-    fitToView(layout.totalHeight, { animate: options.animate ?? true });
+    fitToView(layout.totalHeight, {
+      animate: options.animate ?? true,
+      minScale: options.minScale,
+    });
   } else {
     gRoot.attr("transform", _currentTransform ?? d3.zoomIdentity);
-    _updateMinimapViewport();
   }
 }
 
 export function setVisibility(key, val) {
   vis[key] = val;
   _applyVisibility();
-  _refreshMinimap();
 }
 
 export function setOpacity(key, val) {
   opa[key] = val;
   _applyVisibility();
-  _refreshMinimap();
 }
 
 export function fitToView(totalHeight, options = {}) {
   if (!svg) return;
-  const transform = _computeFitTransform(totalHeight);
+  const transform = _computeFitTransform(totalHeight, options.minScale);
   if (!transform) return;
   _applyTransform(transform, options.animate ?? true);
 }
@@ -150,29 +150,259 @@ export function zoomBy(factor, options = {}) {
 
 // ── Draw one PO block ─────────────────────────────────────────────────────────
 
+function _drawOverviewNetwork(network, lBg, lMeta, lNodes, lLabels) {
+  const focusedCommunityId = network.meta?.focusCommunityId ?? null;
+  const isFocused = Boolean(focusedCommunityId);
+  const clusterById = Object.fromEntries(network.clusters.map(cluster => [cluster.id, cluster]));
+
+  network.clusters.forEach(cluster => {
+    const color = _clusterColor(cluster.id);
+    const shellRadius = isFocused ? cluster.radius + 18 : cluster.outerRadius + 4;
+    const bubble = lBg.append("circle")
+      .attr("cx", cluster.x)
+      .attr("cy", cluster.y)
+      .attr("r", shellRadius)
+      .attr("fill", _clusterColor(cluster.id, isFocused ? 0.16 : 0.1))
+      .attr("stroke", _clusterColor(cluster.id, isFocused ? 0.42 : 0.34))
+      .attr("stroke-width", isFocused ? 1.8 : 1.5)
+      .style("cursor", "pointer")
+      .on("click", () => _cb.onCommunitySelect?.(cluster.id))
+      .on("mousemove", ev => _cb.onTooltipShow(
+        `<div class="tip-title">${cluster.label}</div>
+         ${cluster.code ? `<div class="tip-row">Group: <b>${cluster.code}</b></div>` : ""}
+         <div class="tip-row">Cases: <b>${cluster.count}</b></div>
+         ${cluster.resources?.length ? `<div class="tip-row">Resources: <b>${cluster.resources.slice(0, 3).map(d => d.label).join(", ")}</b></div>` : ""}
+         ${cluster.attributes?.length ? `<div class="tip-row">Attributes: <b>${cluster.attributes.slice(0, 2).map(d => d.label).join(", ")}</b></div>` : ""}
+         <div class="tip-row" style="margin-top:5px;color:var(--col-po);font-size:10px">Click to focus this community</div>`,
+        ev.offsetX, ev.offsetY
+      ))
+      .on("mouseleave", _cb.onTooltipHide);
+
+    lBg.append("circle")
+      .attr("cx", cluster.x)
+      .attr("cy", cluster.y)
+      .attr("r", cluster.radius + 10)
+      .attr("fill", _clusterColor(cluster.id, 0.07))
+      .attr("stroke", _clusterColor(cluster.id, 0.24))
+      .attr("stroke-width", 1.1);
+
+    const labelY = cluster.y - (isFocused ? cluster.radius + 96 : cluster.outerRadius + 18);
+    lLabels.append("text")
+      .attr("x", cluster.x)
+      .attr("y", labelY)
+      .attr("text-anchor", "middle")
+      .attr("font-family", "JetBrains Mono, monospace")
+      .attr("font-size", "11px")
+      .attr("font-weight", "700")
+      .attr("fill", color)
+      .text(_ellipsis(cluster.label, 28));
+
+    lLabels.append("text")
+      .attr("x", cluster.x)
+      .attr("y", labelY + 14)
+      .attr("text-anchor", "middle")
+      .attr("font-family", "JetBrains Mono, monospace")
+      .attr("font-size", "8px")
+      .attr("fill", "rgba(12,29,50,0.72)")
+      .text(`${cluster.count} cases${cluster.hint ? ` • ${cluster.hint}` : ""}`);
+
+    lNodes.append("circle")
+      .attr("cx", cluster.x)
+      .attr("cy", cluster.y)
+      .attr("r", Math.min(24, 11 + cluster.count * 0.9))
+      .attr("fill", _clusterColor(cluster.id, 0.18))
+      .attr("stroke", color)
+      .attr("stroke-width", isFocused ? 2 : 2.4)
+      .style("cursor", "pointer")
+      .on("click", () => _cb.onCommunitySelect?.(cluster.id));
+
+    if (isFocused) {
+      const satellites = (cluster.satellites ?? []).filter(d =>
+        (d.type === "resource" && vis.resources) || (d.type === "attribute" && vis.attributes)
+      );
+
+      lMeta.selectAll(null).data(satellites).join("line")
+        .attr("x1", cluster.x)
+        .attr("y1", cluster.y)
+        .attr("x2", d => d.x)
+        .attr("y2", d => d.y)
+        .attr("stroke", d => d.type === "resource" ? "rgba(15,118,110,0.22)" : "rgba(217,119,6,0.22)")
+        .attr("stroke-width", 0.9)
+        .attr("stroke-dasharray", "2 4")
+        .attr("class", d => d.type === "resource" ? "resource-satellite" : "attribute-satellite");
+
+      const satelliteG = lNodes.selectAll(null).data(satellites).join("g")
+        .attr("transform", d => `translate(${d.x},${d.y})`)
+        .attr("class", d => d.type === "resource" ? "resource-satellite" : "attribute-satellite")
+        .on("mousemove", function(ev, d) {
+          _cb.onTooltipShow(
+            `<div class="tip-title">${d.type === "resource" ? "Resource" : "Attribute"}</div>
+             <div class="tip-row"><b>${d.label}</b></div>
+             <div class="tip-row">Appears in <b>${d.count}</b> cases of this community</div>`,
+            ev.offsetX, ev.offsetY
+          );
+        })
+        .on("mouseleave", _cb.onTooltipHide);
+
+      satelliteG.filter(d => d.type === "resource")
+        .append("ellipse")
+        .attr("rx", d => d.w / 2)
+        .attr("ry", d => d.h / 2)
+        .attr("fill", "rgba(15,118,110,0.12)")
+        .attr("stroke", "rgba(15,118,110,0.56)")
+        .attr("stroke-width", 1.1);
+
+      satelliteG.filter(d => d.type === "attribute")
+        .append("rect")
+        .attr("x", d => -d.w / 2)
+        .attr("y", d => -d.h / 2)
+        .attr("width", d => d.w)
+        .attr("height", d => d.h)
+        .attr("rx", 7)
+        .attr("fill", "rgba(217,119,6,0.12)")
+        .attr("stroke", "rgba(217,119,6,0.56)")
+        .attr("stroke-width", 1.1);
+
+      satelliteG.append("text")
+        .attr("text-anchor", "middle")
+        .attr("dy", "0.34em")
+        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-size", "7px")
+        .attr("font-weight", "600")
+        .attr("fill", d => d.type === "resource" ? "#0f766e" : "#b45309")
+        .text(d => d.shortLabel ?? _ellipsis(d.label, 16));
+    }
+  });
+
+  if (!isFocused) {
+    lMeta.selectAll(null).data(network.communityEdges ?? []).join("path")
+      .attr("class", "edge-overview")
+      .attr("d", d => {
+        const source = clusterById[d.source];
+        const target = clusterById[d.target];
+        if (!source || !target) return "";
+        const mx = (source.x + target.x) / 2;
+        const my = (source.y + target.y) / 2;
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const curve = Math.min(80, Math.hypot(dx, dy) * 0.12);
+        return `M${source.x},${source.y} Q${mx - dy / Math.max(Math.hypot(dx, dy), 1) * curve},${my + dx / Math.max(Math.hypot(dx, dy), 1) * curve} ${target.x},${target.y}`;
+      })
+      .attr("fill", "none")
+      .attr("stroke", d => _clusterColor(d.source, Math.min(0.22 + d.weight * 0.08, 0.52)))
+      .attr("stroke-width", d => Math.min(1.4 + d.weight * 2.1, 4))
+      .on("mousemove", function(ev, d) {
+        _cb.onTooltipShow(
+          `<div class="tip-title">Community similarity</div>
+           <div class="tip-row">Strength: <b>${Math.round(d.weight * 100)}%</b></div>
+           <div class="tip-row">Supporting case links: <b>${d.count}</b></div>`,
+          ev.offsetX, ev.offsetY
+        );
+      })
+      .on("mouseleave", _cb.onTooltipHide);
+    return;
+  }
+
+  lMeta.selectAll(null).data(network.edges).join("path")
+    .attr("class", "edge-overview")
+    .attr("d", d => `M${d.x1},${d.y1} Q${d.cx},${d.cy} ${d.x2},${d.y2}`)
+    .attr("fill", "none")
+    .attr("stroke", d => `rgba(30,64,175,${Math.min(0.26 + d.weight * 0.1, 0.6)})`)
+    .attr("stroke-width", d => Math.min(1.4 + d.weight * 3.2, 4.2))
+    .on("mousemove", function(ev, d) {
+      _cb.onTooltipShow(
+        `<div class="tip-title">Case similarity</div>
+         <div class="tip-row">Strength: <b>${Math.round(d.weight * 100)}%</b></div>
+         ${d.reasons?.map(reason => `<div class="tip-row">${reason}</div>`).join("") ?? ""}`,
+        ev.offsetX, ev.offsetY
+      );
+    })
+    .on("mouseleave", _cb.onTooltipHide);
+
+  const poG = lNodes.selectAll(null).data(network.nodes).join("g")
+    .attr("transform", d => `translate(${d.x},${d.y})`)
+    .style("cursor", "pointer")
+    .on("click", (_, d) => _cb.onPoSelect?.(d.id))
+    .on("mousemove", function(ev, d) {
+      const dateRange = d.firstDate && d.lastDate
+        ? `${d.firstDate.toLocaleDateString("en-GB")} -> ${d.lastDate.toLocaleDateString("en-GB")}`
+        : "n/a";
+      _cb.onTooltipShow(
+        `<div class="tip-title">PO ${d.id}</div>
+         <div class="tip-row">Community: <b>${d.clusterLabel}</b></div>
+         ${d.clusterCode ? `<div class="tip-row">Group: <b>${d.clusterCode}</b></div>` : ""}
+         <div class="tip-row">Events: <b>${d.filteredEvents} / ${d.totalEvents}</b></div>
+         <div class="tip-row">Items: <b>${d.filteredItems} / ${d.totalItems}</b></div>
+         <div class="tip-row">Linked POs: <b>${d.degree}</b></div>
+         <div class="tip-row">Range: <b>${dateRange}</b></div>
+         ${d.topActivities?.length ? `<div class="tip-row">Top activities: <b>${_activitySummary(d.topActivities)}</b></div>` : ""}
+         ${d.topResources?.length ? `<div class="tip-row">Top resources: <b>${d.topResources.join(", ")}</b></div>` : ""}
+         ${_tooltipRows(d.displayAttrs, d.attrKeys ?? [])}
+         <div class="tip-row" style="margin-top:5px;color:var(--col-po);font-size:10px">Click to open detailed layout</div>`,
+        ev.offsetX, ev.offsetY
+      );
+    })
+    .on("mouseleave", _cb.onTooltipHide);
+
+  poG.append("circle")
+    .attr("r", d => d.r + 4)
+    .attr("fill", d => _clusterColor(d.clusterKey, 0.1))
+    .attr("stroke", "none");
+
+  poG.append("circle")
+    .attr("r", d => d.r)
+    .attr("fill", d => _clusterColor(d.clusterKey, 0.16))
+    .attr("stroke", d => _clusterColor(d.clusterKey))
+    .attr("stroke-width", d => d.degree > 0 ? 2.2 : 1.3);
+
+  poG.append("text")
+    .attr("text-anchor", "middle")
+    .attr("dy", "-0.1em")
+    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-size", "8px")
+    .attr("font-weight", "700")
+    .attr("fill", d => _clusterColor(d.clusterKey))
+    .text(d => _poSuffix(d.id));
+
+  poG.append("text")
+    .attr("text-anchor", "middle")
+    .attr("dy", "1.0em")
+    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-size", "7px")
+    .attr("fill", "var(--text-dim)")
+    .text(d => `${d.filteredEvents}e`);
+}
+
 function _drawBlock(block, lBg, lDfPo, lCorr, lRes, lDfItem, lNodes, lLabels) {
-  const { po, poMidY, startY, totalHeight, itemRows, dfPoEdges, poAttrs } = block;
+  const { po, poMidY, startY, totalHeight, itemRows, dfPoEdges, poAttrs, isOverview, contentMaxX } = block;
   const W = _svgW();
+  const blockRightX = Math.max(W - 12, (contentMaxX ?? 0) + 24);
 
   // Block background card
-  lBg.append("rect")
+  const blockCard = lBg.append("rect")
     .attr("x", 12).attr("y", startY + 4)
-    .attr("width", W - 24).attr("height", totalHeight - 8)
+    .attr("width", blockRightX - 12).attr("height", totalHeight - 8)
     .attr("fill", "rgba(37,99,235,0.04)")
     .attr("stroke", "rgba(37,99,235,0.14)")
     .attr("stroke-width", 1).attr("rx", 10);
 
-  // Vertical guide line from PO down through all item rows
-  lBg.append("line")
-    .attr("x1", ITEM_X).attr("y1", startY + 24)
-    .attr("x2", ITEM_X).attr("y2", startY + totalHeight - 16)
-    .attr("stroke", "rgba(34,48,71,0.12)")
-    .attr("stroke-width", 1);
+  if (isOverview) {
+    blockCard
+      .style("cursor", "pointer")
+      .on("click", () => _cb.onPoSelect?.(po));
+  } else {
+    // Vertical guide line from PO down through all item rows
+    lBg.append("line")
+      .attr("x1", ITEM_X).attr("y1", startY + 24)
+      .attr("x2", ITEM_X).attr("y2", startY + totalHeight - 16)
+      .attr("stroke", "rgba(34,48,71,0.12)")
+      .attr("stroke-width", 1);
+  }
 
   // PO node
   const poG = lNodes.append("g")
     .attr("transform", `translate(${PO_X},${poMidY})`)
-    .style("cursor", "default");
+    .style("cursor", "pointer");
 
   // Outer ring (subtle glow)
   poG.append("circle")
@@ -203,12 +433,19 @@ function _drawBlock(block, lBg, lDfPo, lCorr, lRes, lDfItem, lNodes, lLabels) {
   poG.on("mousemove", ev =>
     _cb.onTooltipShow(
       `<div class="tip-title">PO ${po}</div>
-       <div class="tip-row">Items: <b>${block.items.length}</b></div>
+       <div class="tip-row">Items: <b>${block.meta?.totalItems ?? block.items.length}</b></div>
        <div class="tip-row">Total events: <b>${block.meta?.totalEvents ?? "—"}</b></div>
+       ${isOverview ? `<div class="tip-row" style="margin-top:5px;color:var(--col-po);font-size:10px">Click to focus this PO</div>` : ""}
        ${_tooltipRows(poAttrs, ["Vendor", "Company", "Document_Type", "Source"])}`,
       ev.offsetX, ev.offsetY
     )
-  ).on("mouseleave", _cb.onTooltipHide);
+  ).on("mouseleave", _cb.onTooltipHide)
+    .on("click", () => _cb.onPoSelect?.(po));
+
+  if (isOverview) {
+    _drawOverviewBlock(block, lBg, lCorr, lNodes, lLabels);
+    return;
+  }
 
   // PO-level DF arcs
   lDfPo.selectAll(null).data(dfPoEdges).join("path")
@@ -224,10 +461,140 @@ function _drawBlock(block, lBg, lDfPo, lCorr, lRes, lDfItem, lNodes, lLabels) {
 
 // ── Draw one POItem row ───────────────────────────────────────────────────────
 
+function _drawOverviewBlock(block, lBg, lCorr, lNodes, lLabels) {
+  const { po, poMidY, overview } = block;
+  const {
+    corrEdge,
+    summaryNode,
+    timeline,
+    firstDate,
+    lastDate,
+    dateRange,
+    previewItems,
+    hiddenItemCount,
+    shownItems,
+    totalItems,
+    filteredEvents,
+    totalEvents,
+  } = overview;
+
+  lCorr.append("line").attr("class", "edge-corr")
+    .attr("x1", corrEdge.x1).attr("y1", corrEdge.y1)
+    .attr("x2", corrEdge.x2).attr("y2", corrEdge.y2)
+    .attr("stroke", PO_COLOR).attr("stroke-width", 1)
+    .attr("stroke-dasharray", "3 4").attr("opacity", 0.22);
+
+  lNodes.append("rect")
+    .attr("x", ITEM_X - ITEM_R - 8).attr("y", poMidY - 24)
+    .attr("width", _svgW() - ITEM_X + ITEM_R - 12)
+    .attr("height", 48)
+    .attr("fill", "rgba(37,99,235,0.03)")
+    .attr("stroke", "rgba(37,99,235,0.10)")
+    .attr("stroke-width", 0.8).attr("rx", 12)
+    .style("cursor", "pointer")
+    .on("click", () => _cb.onPoSelect?.(po));
+
+  const summaryG = lNodes.append("g")
+    .attr("transform", `translate(${summaryNode.x},${summaryNode.y})`)
+    .style("cursor", "pointer")
+    .on("click", () => _cb.onPoSelect?.(po))
+    .on("mousemove", ev =>
+      _cb.onTooltipShow(
+        `<div class="tip-title">Overview cluster</div>
+         <div class="tip-row">Visible items: <b>${shownItems}</b></div>
+         <div class="tip-row">Total items: <b>${totalItems}</b></div>
+         <div class="tip-row">Visible events: <b>${filteredEvents}</b></div>
+         <div class="tip-row">Date span: <b>${dateRange}</b></div>
+         <div class="tip-row" style="margin-top:5px;color:var(--col-po);font-size:10px">Click to open detailed layout</div>`,
+        ev.offsetX, ev.offsetY
+      )
+    )
+    .on("mouseleave", _cb.onTooltipHide);
+
+  summaryG.append("circle")
+    .attr("r", summaryNode.r + 5)
+    .attr("fill", "rgba(37,99,235,0.08)")
+    .attr("stroke", "none");
+
+  summaryG.append("circle")
+    .attr("r", summaryNode.r)
+    .attr("fill", "rgba(37,99,235,0.12)")
+    .attr("stroke", PO_COLOR)
+    .attr("stroke-width", 1.6);
+
+  summaryG.append("text")
+    .attr("text-anchor", "middle")
+    .attr("dy", "0.35em")
+    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-size", "12px")
+    .attr("font-weight", "700")
+    .attr("fill", PO_COLOR)
+    .text("S");
+
+  lBg.append("rect")
+    .attr("x", timeline.x1 - 18).attr("y", timeline.y - 16)
+    .attr("width", Math.max(timeline.x2 - timeline.x1 + 36, 56))
+    .attr("height", 32)
+    .attr("rx", 16)
+    .attr("fill", "rgba(255,255,255,0.50)")
+    .attr("stroke", "rgba(37,99,235,0.10)")
+    .attr("stroke-width", 0.8);
+
+  lNodes.append("line")
+    .attr("x1", summaryNode.x + summaryNode.r + 12).attr("y1", timeline.y)
+    .attr("x2", timeline.x2).attr("y2", timeline.y)
+    .attr("stroke", PO_COLOR).attr("stroke-width", 1.1).attr("opacity", 0.16);
+
+  lLabels.append("text")
+    .attr("x", ITEM_X + ITEM_R + 14).attr("y", poMidY - 7)
+    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-size", "11px").attr("font-weight", "600")
+    .attr("fill", PO_COLOR)
+    .text(`${shownItems} / ${totalItems} items`);
+
+  lLabels.append("text")
+    .attr("x", ITEM_X + ITEM_R + 14).attr("y", poMidY + 10)
+    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-size", "9px").attr("fill", "var(--text-dim)")
+    .text(`${filteredEvents} / ${totalEvents} ev · ${dateRange}`);
+
+  const previewChips = previewItems.slice(0, 4).map(label => ({
+    label: "Item",
+    value: label.replace(/^Item\s+/, ""),
+    maxChars: 8,
+    fill: "rgba(37,99,235,0.08)",
+    stroke: "rgba(37,99,235,0.14)",
+    textColor: "#243449",
+  }));
+  if (hiddenItemCount > 0) {
+    previewChips.push({
+      label: "+",
+      value: `${hiddenItemCount} more`,
+      maxChars: 12,
+      fill: "rgba(21,154,103,0.10)",
+      stroke: "rgba(21,154,103,0.20)",
+      textColor: "#0f766e",
+    });
+  }
+  _drawChipList(lLabels, previewChips, ITEM_X + ITEM_R + 14, poMidY + 16);
+
+  [firstDate, lastDate].forEach((d, i) => {
+    if (!d) return;
+    const x = i === 0 ? timeline.x1 : timeline.x2;
+    const anchor = i === 0 ? "start" : "end";
+    lLabels.append("text")
+      .attr("x", x).attr("y", timeline.y + 18)
+      .attr("text-anchor", anchor)
+      .attr("font-family", "JetBrains Mono, monospace")
+      .attr("font-size", "8px").attr("fill", "var(--text-dim)")
+      .text(d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }));
+  });
+}
+
 function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
   const { item, midY, rowY, h, color, isExp, corrEdge,
           timelineNodes, dfItemEdges, resourceNodes, resourceLinks,
-          itemAttrs, evCount, dateRange } = row;
+          itemAttrs, evCount, dateRange, laneX2 } = row;
 
   // CORR dash: POItem → PO node
   lCorr.append("line").attr("class", "edge-corr")
@@ -237,9 +604,11 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
     .attr("stroke-dasharray", "3 4").attr("opacity", 0.3);
 
   // Row hover / expand background
+  const laneX1 = ITEM_X - ITEM_R - 8;
+  const laneRightX = Math.max(_svgW() - 12, (laneX2 ?? ITEM_X + ITEM_R + 180) + 18);
   lNodes.append("rect")
-    .attr("x", ITEM_X - ITEM_R - 8).attr("y", rowY + 6)
-    .attr("width", _svgW() - ITEM_X + ITEM_R + 8 - 20)
+    .attr("x", laneX1).attr("y", rowY + 6)
+    .attr("width", laneRightX - laneX1)
     .attr("height", h - 12)
     .attr("fill",   isExp ? `${color}12` : "transparent")
     .attr("stroke", isExp ? `${color}40` : "transparent")
@@ -398,7 +767,7 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
          <div class="tip-row">ID: <b>${d.id}</b></div>
          <div class="tip-row">Date: <b>${fmt}</b></div>
          <div class="tip-row">POItem: <b>${d.poitem_id}</b></div>
-         ${d.org_resource ? `<div class="tip-row">Resource: <b>${d.org_resource}</b></div>` : ""}
+         ${_hasResourceValue(d.org_resource) ? `<div class="tip-row">Resource: <b>${d.org_resource}</b></div>` : ""}
          ${d.lifecycle_transition ? `<div class="tip-row">Lifecycle: <b>${d.lifecycle_transition}</b></div>` : ""}
          ${_tooltipRows(d, ["Document_Type", "Source", "Vendor", "Company"])}`,
         ev.offsetX, ev.offsetY
@@ -488,6 +857,10 @@ function _applyVisibility() {
     .attr("display", vis.corr  ? null : "none").attr("opacity", opa.corr);
   gRoot.selectAll(".resource-overlay")
     .attr("display", vis.resources ? null : "none");
+  gRoot.selectAll(".resource-satellite")
+    .attr("display", vis.resources ? null : "none");
+  gRoot.selectAll(".attribute-satellite")
+    .attr("display", vis.attributes ? null : "none");
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -567,7 +940,7 @@ function _contentBounds(totalHeight) {
   return fallback;
 }
 
-function _computeFitTransform(totalHeight) {
+function _computeFitTransform(totalHeight, minScale = FIT_READABLE_MIN_SCALE) {
   const bounds = _contentBounds(totalHeight);
   if (!bounds || !svg?.node()) return null;
 
@@ -580,17 +953,14 @@ function _computeFitTransform(totalHeight) {
     innerW / Math.max(bounds.width, 1),
     innerH / Math.max(bounds.height, 1),
   );
-  const scale = fitScale < FIT_READABLE_MIN_SCALE && bounds.height > viewportH
-    ? Math.min(FIT_READABLE_MIN_SCALE, innerW / Math.max(bounds.width, 1))
+  const scale = fitScale < minScale && bounds.height > viewportH
+    ? Math.min(minScale, innerW / Math.max(bounds.width, 1))
     : fitScale;
 
   const centerX = bounds.x + bounds.width / 2;
   const centerY = bounds.y + bounds.height / 2;
-  const scaledHeight = bounds.height * scale;
   const tx = viewportW / 2 - centerX * scale;
-  const ty = scaledHeight > innerH
-    ? FIT_PAD_Y - bounds.y * scale
-    : viewportH / 2 - centerY * scale;
+  const ty = viewportH / 2 - centerY * scale;
 
   return d3.zoomIdentity
     .translate(tx, ty)
@@ -613,66 +983,14 @@ function _updateTranslateExtent(totalHeight) {
   const bounds = _contentBounds(totalHeight);
   if (!bounds || !svg?.node() || !zoom) return;
 
-  const padX = Math.max(bounds.width * 0.2, 120);
-  const padY = Math.max(bounds.height * 0.2, 100);
+  const viewportW = svg.node().clientWidth;
+  const viewportH = svg.node().clientHeight;
+  const padX = Math.max(bounds.width * 0.9, viewportW * 1.1, 640);
+  const padY = Math.max(bounds.height * 0.9, viewportH * 1.1, 520);
   zoom.translateExtent([
     [bounds.x - padX, bounds.y - padY],
     [bounds.x + bounds.width + padX, bounds.y + bounds.height + padY],
   ]);
-}
-
-function _refreshMinimap() {
-  if (!miniSvg || !miniRoot || !miniViewport || !gRoot?.node()) return;
-
-  const bounds = _contentBounds(_lastTotalHeight);
-  if (!bounds) return;
-
-  const pad = MINIMAP_PAD;
-  miniSvg.attr(
-    "viewBox",
-    `${bounds.x - pad} ${bounds.y - pad} ${bounds.width + pad * 2} ${bounds.height + pad * 2}`,
-  );
-
-  miniRoot.selectAll("*").remove();
-  const clone = gRoot.node().cloneNode(true);
-  clone.removeAttribute("transform");
-  while (clone.firstChild) {
-    miniRoot.node().appendChild(clone.firstChild);
-  }
-
-  _updateMinimapViewport();
-}
-
-function _updateMinimapViewport() {
-  if (!miniViewport || !svg?.node() || !_lastContentBounds) return;
-
-  const viewportW = svg.node().clientWidth;
-  const viewportH = svg.node().clientHeight;
-  const k = _currentTransform.k || 1;
-  const x = -_currentTransform.x / k;
-  const y = -_currentTransform.y / k;
-  const w = viewportW / k;
-  const h = viewportH / k;
-
-  miniViewport
-    .attr("x", x)
-    .attr("y", y)
-    .attr("width", w)
-    .attr("height", h);
-}
-
-function _onMinimapClick(event) {
-  if (!miniSvg?.node() || !svg?.node()) return;
-  const viewBox = _getMinimapViewBox();
-  if (!viewBox) return;
-
-  const rect = miniSvg.node().getBoundingClientRect();
-  if (!rect.width || !rect.height) return;
-
-  const [px, py] = d3.pointer(event, miniSvg.node());
-  const graphX = viewBox.x + (px / rect.width) * viewBox.width;
-  const graphY = viewBox.y + (py / rect.height) * viewBox.height;
-  _centerOn(graphX, graphY, { animate: true });
 }
 
 function _centerOn(graphX, graphY, options = {}) {
@@ -686,18 +1004,33 @@ function _centerOn(graphX, graphY, options = {}) {
   _applyTransform(transform, options.animate ?? true);
 }
 
-function _getMinimapViewBox() {
-  if (!miniSvg) return null;
-  const raw = miniSvg.attr("viewBox");
-  if (!raw) return null;
-  const [x, y, width, height] = raw.split(/[\s,]+/).map(Number);
-  if (![x, y, width, height].every(Number.isFinite)) return null;
-  return { x, y, width, height };
-}
-
 function _suffix(itemId) {
   const m = itemId.match(/_0*(\d+)$/);
   return m ? parseInt(m[1], 10) : itemId;
+}
+
+function _poSuffix(poId) {
+  return String(poId ?? "").slice(-4);
+}
+
+function _activitySummary(entries) {
+  return (entries ?? [])
+    .map(entry => `${_ellipsis(entry.activity, 16)} (${entry.count})`)
+    .join(", ");
+}
+
+function _hasResourceValue(value) {
+  if (value === undefined || value === null) return false;
+  const normalized = String(value).trim();
+  return normalized !== "" && normalized.toUpperCase() !== "NONE";
+}
+
+function _clusterColor(value, alpha = 1) {
+  let hash = 0;
+  const text = String(value ?? "");
+  for (let i = 0; i < text.length; i++) hash = ((hash << 5) - hash) + text.charCodeAt(i);
+  const [r, g, b] = COMMUNITY_PALETTE[Math.abs(hash) % COMMUNITY_PALETTE.length];
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 function _ellipsis(value, maxChars) {

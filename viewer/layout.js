@@ -37,6 +37,7 @@ const MULTI_PO_GAP = 28;
 const TIMELINE_PAD_R = 48;
 const MIN_EVENT_SPACING = 22;
 const MIN_RESOURCE_SPACING = 46;
+const HOUR_MS = 1000 * 60 * 60;
 
 const OVERVIEW_PAD_X = 80;
 const OVERVIEW_PAD_Y = 70;
@@ -50,7 +51,7 @@ const SATELLITES_PER_RING = 5;
 const FOCUS_RESOURCE_LIMIT = 8;
 const FOCUS_ATTR_LIMIT = 8;
 
-export function computeLayout(graphs, expanded, width) {
+export function computeLayout(graphs, expanded, width, options = {}) {
   if (graphs.length === 1 && graphs[0]?.isOverviewNetwork) {
     return _layoutOverviewNetwork(graphs[0], width);
   }
@@ -59,11 +60,17 @@ export function computeLayout(graphs, expanded, width) {
   let curY = 20;
   const poBlocks = [];
   graphs.forEach(graph => {
-    const block = _layoutBlock(graph, expanded, curY, timelineW);
+    const block = _layoutBlock(graph, expanded, curY, timelineW, options);
     poBlocks.push(block);
     curY += block.totalHeight + MULTI_PO_GAP;
   });
-  return { overviewNetwork: false, poBlocks, totalHeight: curY };
+  return {
+    overviewNetwork: false,
+    poBlocks,
+    totalHeight: curY,
+    patterns: poBlocks[0]?.patterns ?? { dominantPattern: [], entityPatterns: {} },
+    summary: _summarizeFocusBlocks(poBlocks),
+  };
 }
 
 function _layoutOverviewNetwork(graph, width) {
@@ -360,10 +367,22 @@ function _layoutFocusSatelliteColumn(entries, x, startY, type) {
   });
 }
 
-function _layoutBlock(graph, expanded, startY, timelineW) {
-  const { po, items, events, dfItem, dfPo, poAttrs, itemAttrsById } = graph;
-  events.forEach(e => { if (!e.id) e.id = e.event_id; });
-  const evById = Object.fromEntries(events.map(e => [e.id, e]));
+function _layoutBlock(graph, expanded, startY, timelineW, options = {}) {
+  const { po, poAttrs, itemAttrsById } = graph;
+  const allItems = [...(graph.allItems ?? graph.items ?? [])];
+  const visibleItems = [...(graph.items ?? allItems)];
+  const allEvents = [...(graph.allEvents ?? graph.events ?? [])];
+  const allDfItem = [...(graph.allDfItem ?? graph.dfItem ?? [])];
+  const allDfPo = [...(graph.allDfPo ?? graph.dfPo ?? [])];
+  allEvents.forEach(e => { if (!e.id) e.id = e.event_id; });
+  const evById = Object.fromEntries(allEvents.map(e => [e.id, e]));
+  const eventsByItem = _groupBy(allEvents, e => e.poitem_id);
+  const dfItemByEntity = _groupBy(allDfItem, edge => edge.entityId);
+  const patternAnalysis = _analyzeEntityPatterns(allItems, eventsByItem, dfItemByEntity, evById);
+  const items = options.showDeviantsOnly
+    ? allItems.filter(item => !(patternAnalysis.entityPatterns[item]?.followsDominant ?? true))
+    : visibleItems;
+  const displayedDfItemCount = items.reduce((sum, item) => sum + (dfItemByEntity[item]?.length ?? 0), 0);
 
   const rowHeights = items.map(item => expanded.has(item) ? ROW_H_EXPANDED : ROW_H_COLLAPSED);
   const contentH = rowHeights.reduce((a, b) => a + b, 0);
@@ -380,8 +399,13 @@ function _layoutBlock(graph, expanded, startY, timelineW) {
     const color = ITEM_COLORS[i % ITEM_COLORS.length];
     const isExp = expanded.has(item);
     const itemAttrs = itemAttrsById?.[item] ?? {};
+    const entityPattern = patternAnalysis.entityPatterns[item] ?? {
+      sequence: [],
+      followsDominant: true,
+      entityType: "POItem",
+    };
 
-    const itemEvs = events.filter(e => e.poitem_id === item).sort((a, b) => a.date - b.date);
+    const itemEvs = [...(eventsByItem[item] ?? [])].sort(_compareEvents);
     const evCount = itemEvs.length;
     const firstDate = itemEvs[0]?.date;
     const lastDate = itemEvs.at(-1)?.date;
@@ -406,17 +430,26 @@ function _layoutBlock(graph, expanded, startY, timelineW) {
       timelineNodes = itemEvs.map((e, j) => ({ ...e, x: xs[j], y: midY, r: EVENT_R, color }));
       const posMap = Object.fromEntries(timelineNodes.map(n => [n.id, n]));
 
-      dfItemEdges = (dfItem ?? [])
-        .filter(([s, t]) => {
-          const se = evById[s];
-          const te = evById[t];
-          return se && te && se.poitem_id === item && te.poitem_id === item && posMap[s] && posMap[t];
+      dfItemEdges = (dfItemByEntity[item] ?? [])
+        .filter(edge => {
+          const se = evById[edge.source];
+          const te = evById[edge.target];
+          return se && te && se.poitem_id === item && te.poitem_id === item && posMap[edge.source] && posMap[edge.target];
         })
-        .map(([s, t]) => {
-          const src = posMap[s];
-          const tgt = posMap[t];
+        .map(edge => {
+          const src = posMap[edge.source];
+          const tgt = posMap[edge.target];
+          const srcEvent = evById[edge.source];
+          const tgtEvent = evById[edge.target];
           return {
-            id: `df-${s}-${t}`,
+            id: `df-${edge.entityId}-${edge.source}-${edge.target}`,
+            entityId: edge.entityId,
+            sourceId: edge.source,
+            targetId: edge.target,
+            sourceActivity: srcEvent?.activity ?? edge.source,
+            targetActivity: tgtEvent?.activity ?? edge.target,
+            gapHours: _hoursBetween(srcEvent?.date, tgtEvent?.date),
+            isBottleneck: false,
             type: Math.abs(src.x - tgt.x) < 2 ? "arc" : "line",
             x1: src.x,
             y1: src.y,
@@ -484,6 +517,9 @@ function _layoutBlock(graph, expanded, startY, timelineW) {
       midY,
       rowY,
       color,
+      followsDominant: entityPattern.followsDominant,
+      sequence: entityPattern.sequence,
+      entityType: entityPattern.entityType,
       isExp,
       timelineNodes,
       dfItemEdges,
@@ -504,40 +540,273 @@ function _layoutBlock(graph, expanded, startY, timelineW) {
     if (row.isExp) {
       row.timelineNodes.forEach(n => { allPos[n.id] = { x: n.x, y: n.y }; });
     } else {
-      events
+      allEvents
         .filter(e => e.poitem_id === row.item)
         .forEach(e => { allPos[e.id] = { x: ITEM_X, y: row.midY }; });
     }
   });
 
-  const dfPoEdges = (dfPo ?? [])
-    .filter(([s, t]) => {
-      const se = evById[s];
-      const te = evById[t];
-      return se && te && se.poitem_id !== te.poitem_id && allPos[s] && allPos[t];
+  const displayedItemSet = new Set(itemRows.map(row => row.item));
+  const dfPoEdges = (allDfPo ?? [])
+    .filter(edge => {
+      const se = evById[edge.source];
+      const te = evById[edge.target];
+      return se && te && se.poitem_id !== te.poitem_id && allPos[edge.source] && allPos[edge.target];
     })
-    .map(([s, t]) => {
-      const src = allPos[s];
-      const tgt = allPos[t];
+    .filter(edge => displayedItemSet.has(evById[edge.source]?.poitem_id) && displayedItemSet.has(evById[edge.target]?.poitem_id))
+    .map(edge => {
+      const src = allPos[edge.source];
+      const tgt = allPos[edge.target];
       const mx = (src.x + tgt.x) / 2;
       const dy = Math.abs(src.y - tgt.y);
       const cy = Math.min(src.y, tgt.y) - Math.max(dy * 0.4, 24);
-      return { id: `dfpo-${s}-${t}`, x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y, cx: mx, cy };
+      return { id: `dfpo-${edge.source}-${edge.target}`, x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y, cx: mx, cy };
     });
+
+  _annotateSyncEvents(itemRows, patternAnalysis, displayedItemSet);
+  const bottleneckThresholdHours = _annotateBottlenecks(itemRows);
 
   return {
     po,
     items,
+    patterns: {
+      dominantPattern: patternAnalysis.dominantPattern,
+      entityPatterns: Object.fromEntries(
+        Object.entries(patternAnalysis.entityPatterns).map(([entityId, entry]) => [
+          entityId,
+          {
+            sequence: entry.sequence,
+            followsDominant: entry.followsDominant,
+          },
+        ])
+      ),
+      entityType: patternAnalysis.entityType,
+    },
     totalHeight,
     poMidY,
     startY,
     itemRows,
     contentMaxX: blockContentMaxX,
     dfPoEdges,
+    displayedDfItemCount,
     poAttrs,
     meta: graph.meta,
+    bottleneckThresholdHours,
     isOverview: false,
   };
+}
+
+function _analyzeEntityPatterns(entityIds, eventsByEntity, edgesByEntity, evById) {
+  const entityEntries = {};
+  const sequenceCounts = new Map();
+  let entityType = "POItem";
+
+  entityIds.forEach(entityId => {
+    const events = [...(eventsByEntity[entityId] ?? [])].sort(_compareEvents);
+    const edges = (edgesByEntity[entityId] ?? []).filter(edge => evById[edge.source] && evById[edge.target]);
+    const traced = _traceEntityPath(events, edges, evById);
+    const sequence = traced.eventIds
+      .map(eventId => evById[eventId]?.activity)
+      .filter(Boolean);
+    const sequenceKey = JSON.stringify(sequence);
+    if (sequence.length > 0) {
+      sequenceCounts.set(sequenceKey, (sequenceCounts.get(sequenceKey) ?? 0) + 1);
+    }
+    entityType = edges[0]?.entityType ?? entityType;
+    entityEntries[entityId] = {
+      entityId,
+      entityType: edges[0]?.entityType ?? entityType,
+      sequence,
+      eventIds: traced.eventIds,
+      predecessorActivities: traced.predecessorActivities,
+      successorActivities: traced.successorActivities,
+      followsDominant: true,
+    };
+  });
+
+  const dominantPatternKey = [...sequenceCounts.entries()]
+    .sort((a, b) =>
+      b[1] - a[1] ||
+      JSON.parse(b[0]).length - JSON.parse(a[0]).length ||
+      a[0].localeCompare(b[0])
+    )[0]?.[0] ?? "[]";
+  const dominantPattern = JSON.parse(dominantPatternKey);
+
+  Object.values(entityEntries).forEach(entry => {
+    entry.followsDominant = entry.sequence.length === 0 || _sameSequence(entry.sequence, dominantPattern);
+  });
+
+  const eventMemberships = new Map();
+  const syncContextsByEvent = new Map();
+  Object.values(entityEntries).forEach(entry => {
+    [...new Set(entry.eventIds)].forEach(eventId => {
+      if (!eventMemberships.has(eventId)) eventMemberships.set(eventId, new Set());
+      eventMemberships.get(eventId).add(entry.entityId);
+      if (!syncContextsByEvent.has(eventId)) syncContextsByEvent.set(eventId, []);
+      syncContextsByEvent.get(eventId).push({
+        entityId: entry.entityId,
+        predecessorActivities: entry.predecessorActivities[eventId] ?? [],
+        successorActivities: entry.successorActivities[eventId] ?? [],
+      });
+    });
+  });
+
+  return {
+    entityType,
+    dominantPattern,
+    entityPatterns: entityEntries,
+    eventMemberships,
+    syncContextsByEvent,
+  };
+}
+
+function _traceEntityPath(events, edges, evById) {
+  const predecessorIds = {};
+  const successorIds = {};
+  const nodeIds = new Set(events.map(event => event.id));
+
+  edges.forEach(edge => {
+    nodeIds.add(edge.source);
+    nodeIds.add(edge.target);
+    if (!successorIds[edge.source]) successorIds[edge.source] = [];
+    if (!predecessorIds[edge.target]) predecessorIds[edge.target] = [];
+    successorIds[edge.source].push(edge.target);
+    predecessorIds[edge.target].push(edge.source);
+  });
+
+  const nodes = [...nodeIds].filter(eventId => evById[eventId]).sort(_compareEventIds(evById));
+  const starts = nodes.filter(eventId => (predecessorIds[eventId] ?? []).length === 0);
+  const orderedStarts = (starts.length ? starts : nodes).sort(_compareEventIds(evById));
+  const visited = new Set();
+  const orderedEventIds = [];
+  const queue = [...orderedStarts];
+
+  while (queue.length) {
+    let current = queue.shift();
+    while (current && !visited.has(current)) {
+      orderedEventIds.push(current);
+      visited.add(current);
+      const nextIds = [...new Set(successorIds[current] ?? [])]
+        .filter(eventId => !visited.has(eventId))
+        .sort(_compareEventIds(evById));
+      if (nextIds.length <= 1) {
+        current = nextIds[0] ?? null;
+        continue;
+      }
+      queue.unshift(...nextIds.slice(1));
+      current = nextIds[0];
+    }
+  }
+
+  nodes.forEach(eventId => {
+    if (!visited.has(eventId)) orderedEventIds.push(eventId);
+  });
+
+  const predecessorActivities = {};
+  const successorActivities = {};
+  nodes.forEach(eventId => {
+    predecessorActivities[eventId] = [...new Set((predecessorIds[eventId] ?? [])
+      .map(id => evById[id]?.activity)
+      .filter(Boolean))];
+    successorActivities[eventId] = [...new Set((successorIds[eventId] ?? [])
+      .map(id => evById[id]?.activity)
+      .filter(Boolean))];
+  });
+
+  return { eventIds: orderedEventIds, predecessorActivities, successorActivities };
+}
+
+function _annotateSyncEvents(itemRows, patternAnalysis, displayedItemSet) {
+  itemRows.forEach(row => {
+    row.timelineNodes = row.timelineNodes.map(node => {
+      const sharedEntityIds = [...(patternAnalysis.eventMemberships.get(node.id) ?? new Set())]
+        .filter(entityId => displayedItemSet.has(entityId))
+        .sort((a, b) => a.localeCompare(b));
+      const syncDegree = Math.max(sharedEntityIds.length, 1);
+      return {
+        ...node,
+        isSyncEvent: sharedEntityIds.length > 1,
+        syncDegree,
+        sharedEntityIds,
+        syncContexts: (patternAnalysis.syncContextsByEvent.get(node.id) ?? [])
+          .filter(context => displayedItemSet.has(context.entityId))
+          .sort((a, b) => a.entityId.localeCompare(b.entityId)),
+      };
+    });
+  });
+}
+
+function _annotateBottlenecks(itemRows) {
+  const edges = itemRows.flatMap(row => row.dfItemEdges).filter(edge => Number.isFinite(edge.gapHours));
+  const threshold = _quantile(edges.map(edge => edge.gapHours), 0.75);
+  itemRows.forEach(row => {
+    row.dfItemEdges = row.dfItemEdges.map(edge => ({
+      ...edge,
+      isBottleneck: Number.isFinite(threshold) && edge.gapHours > threshold,
+    }));
+  });
+  return threshold;
+}
+
+function _summarizeFocusBlocks(blocks) {
+  return blocks.reduce((summary, block) => {
+    summary.totalItems += block.meta?.totalItems ?? 0;
+    summary.shownItems += block.itemRows.length;
+    summary.totalEvents += block.meta?.totalEvents ?? 0;
+    summary.filteredEvents += block.itemRows.reduce((sum, row) => sum + row.evCount, 0);
+    summary.dfItemCount += block.displayedDfItemCount ?? block.itemRows.reduce((sum, row) => sum + row.dfItemEdges.length, 0);
+    summary.dfPoCount += block.dfPoEdges.length;
+    return summary;
+  }, {
+    totalItems: 0,
+    shownItems: 0,
+    totalEvents: 0,
+    filteredEvents: 0,
+    dfItemCount: 0,
+    dfPoCount: 0,
+  });
+}
+
+function _groupBy(items, getKey) {
+  return (items ?? []).reduce((acc, item) => {
+    const key = getKey(item);
+    if (key === undefined || key === null || key === "") return acc;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+}
+
+function _compareEvents(a, b) {
+  return (a?.date?.getTime?.() ?? 0) - (b?.date?.getTime?.() ?? 0) ||
+    String(a?.id ?? "").localeCompare(String(b?.id ?? ""));
+}
+
+function _compareEventIds(evById) {
+  return (a, b) => _compareEvents(evById[a], evById[b]);
+}
+
+function _hoursBetween(a, b) {
+  if (!(a instanceof Date) || Number.isNaN(a.getTime()) || !(b instanceof Date) || Number.isNaN(b.getTime())) {
+    return 0;
+  }
+  return Math.max((b.getTime() - a.getTime()) / HOUR_MS, 0);
+}
+
+function _quantile(values, q) {
+  const sorted = [...(values ?? [])].filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return NaN;
+  if (sorted.length === 1) return sorted[0];
+  const idx = (sorted.length - 1) * q;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  const t = idx - lo;
+  return sorted[lo] * (1 - t) + sorted[hi] * t;
+}
+
+function _sameSequence(a, b) {
+  return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 }
 
 function _fmt(d) {

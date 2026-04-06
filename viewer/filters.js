@@ -93,10 +93,20 @@ export function buildStore(sources) {
   dfRows.forEach(row => {
     if (row.EntityType === "POItem") {
       if (!dfItemByEntity[row.entity_id]) dfItemByEntity[row.entity_id] = [];
-      dfItemByEntity[row.entity_id].push([row.source_event_id, row.target_event_id]);
+      dfItemByEntity[row.entity_id].push({
+        source: row.source_event_id,
+        target: row.target_event_id,
+        entityId: row.entity_id,
+        entityType: row.EntityType,
+      });
     } else if (row.EntityType === "PO") {
       if (!dfPoByPo[row.entity_id]) dfPoByPo[row.entity_id] = [];
-      dfPoByPo[row.entity_id].push([row.source_event_id, row.target_event_id]);
+      dfPoByPo[row.entity_id].push({
+        source: row.source_event_id,
+        target: row.target_event_id,
+        entityId: row.entity_id,
+        entityType: row.EntityType,
+      });
     }
   });
 
@@ -158,34 +168,56 @@ export function getGraph(poId, filters = {}) {
 
   const { maxItems = 0 } = filters;
 
-  let items = [...(store.itemsByPo[poId] ?? [])].sort();
+  const allItems = [...(store.itemsByPo[poId] ?? [])].sort();
+  let items = [...allItems];
   if (maxItems > 0) items = items.slice(0, maxItems);
   const itemSet = new Set(items);
 
-  let events = (store.eventsByPo[poId] ?? []).filter(event => itemSet.has(event.poitem_id));
-  events = _filterEvents(events, filters);
+  const allEvents = _filterEvents(store.eventsByPo[poId] ?? [], filters);
+  const events = allEvents.filter(event => itemSet.has(event.poitem_id));
 
+  const allEventIdSet = new Set(allEvents.map(event => event.event_id));
   const eventIdSet = new Set(events.map(event => event.event_id));
-  const dfItem = items.flatMap(item =>
-    (store.dfItemByEntity[item] ?? []).filter(([source, target]) => eventIdSet.has(source) && eventIdSet.has(target))
+  const allDfItem = allItems.flatMap(item =>
+    (store.dfItemByEntity[item] ?? []).filter(edge => allEventIdSet.has(edge.source) && allEventIdSet.has(edge.target))
   );
-  const dfPo = (store.dfPoByPo[poId] ?? []).filter(([source, target]) => eventIdSet.has(source) && eventIdSet.has(target));
+  const dfItem = items.flatMap(item =>
+    (store.dfItemByEntity[item] ?? []).filter(edge => eventIdSet.has(edge.source) && eventIdSet.has(edge.target))
+  );
+  const allDfPo = (store.dfPoByPo[poId] ?? []).filter(edge => allEventIdSet.has(edge.source) && allEventIdSet.has(edge.target));
+  const dfPo = (store.dfPoByPo[poId] ?? []).filter(edge => eventIdSet.has(edge.source) && eventIdSet.has(edge.target));
 
   const meta = {
     totalEvents: (store.eventsByPo[poId] ?? []).length,
     filteredEvents: events.length,
+    filteredEventsAll: allEvents.length,
     totalItems: store.itemsByPo[poId]?.size ?? 0,
     shownItems: items.length,
     dfItemCount: dfItem.length,
+    dfItemCountAll: allDfItem.length,
     dfPoCount: dfPo.length,
+    dfPoCountAll: allDfPo.length,
   };
 
   const poAttrs = store.poSummaryById[poId]?.attrs ?? {};
   const itemAttrsById = Object.fromEntries(
-    items.map(item => [item, _pickAttrs(store.eventsByItem[item]?.[0], ITEM_ATTR_KEYS)])
+    allItems.map(item => [item, _pickAttrs(store.eventsByItem[item]?.[0], ITEM_ATTR_KEYS)])
   );
 
-  return { po: poId, items, events, dfItem, dfPo, meta, poAttrs, itemAttrsById };
+  return {
+    po: poId,
+    items,
+    allItems,
+    events,
+    allEvents,
+    dfItem,
+    allDfItem,
+    dfPo,
+    allDfPo,
+    meta,
+    poAttrs,
+    itemAttrsById,
+  };
 }
 
 export function getOverviewGraph(filters = {}) {

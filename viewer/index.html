@@ -51,7 +51,7 @@
       <div class="community-list" id="community-list"></div>
     </div>
 
-    <div class="panel-section" data-scope="community-detail po">
+    <div class="panel-section" data-scope="po">
       <div class="panel-section-title">Edge types</div>
       <div class="toggle-row">
         <span class="toggle-label">
@@ -83,6 +83,30 @@
           <div class="toggle-track"></div>
         </label>
       </div>
+      <div class="toggle-row">
+        <span class="toggle-label">
+          <span class="swatch" style="background:rgba(37,99,235,0.45);border:1px solid rgba(255,255,255,0.9)"></span>
+          Sync events
+        </span>
+        <label class="toggle">
+          <input type="checkbox" id="tog-sync" checked>
+          <div class="toggle-track"></div>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">
+          <span class="swatch" style="background:#d97706"></span>
+          Bottlenecks
+        </span>
+        <label class="toggle">
+          <input type="checkbox" id="tog-bottleneck" checked>
+          <div class="toggle-track"></div>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel-section" data-scope="community-detail">
+      <div class="panel-section-title">Context Layers</div>
       <div class="toggle-row">
         <span class="toggle-label">
           <span class="swatch" style="background:rgba(15,118,110,0.5)"></span>
@@ -131,6 +155,9 @@
         <input type="range" id="sl-maxitems" min="0" max="20" step="1" value="0">
         <span class="slider-val" id="sl-maxitems-val">all</span>
       </div>
+      <div class="btn-row" style="margin-top:8px;margin-bottom:0">
+        <button class="btn-small" id="btn-deviants-only">Show deviants only</button>
+      </div>
       <div id="maxitems-hint" style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.5">
         Limits items to avoid visual overload. 0 = show all.
       </div>
@@ -145,7 +172,7 @@
       </div>
     </div>
 
-    <div class="panel-section" data-scope="community community-detail po" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+    <div class="panel-section panel-section-scrollable" data-scope="community community-detail po">
       <div class="panel-section-title">Activities</div>
       <div class="encoding-hint">
         Event fill = activity<br>
@@ -164,6 +191,12 @@
       <div class="stat-row"><span id="stat-items-label">POItems shown</span><span id="stat-items">-</span></div>
       <div class="stat-row"><span id="stat-dfitem-label">DF edges (item)</span><span id="stat-dfitem">-</span></div>
       <div class="stat-row"><span id="stat-dfpo-label">DF edges (PO)</span><span id="stat-dfpo">-</span></div>
+    </div>
+    <div class="panel-section" id="pattern-panel" data-scope="po">
+      <div class="panel-section-title">Dominant Pattern</div>
+      <div id="pattern-summary" class="community-summary" style="margin-bottom:0">
+        Dominant lifecycle pattern appears here after the layout is drawn.
+      </div>
     </div>
   </div>
 
@@ -208,7 +241,7 @@ import {
 import {
   init as renderInit, draw,
   setVisibility, setOpacity,
-  fitToView,
+  fitToView, resetZoom,
   panBy, zoomBy,
 } from "./render.js";
 
@@ -223,6 +256,7 @@ const state = {
   activities: null,
   resource: null,
   maxItems: 0,
+  showDeviantsOnly: false,
   overviewMinEdgeWeight: 0.35,
   expandedItems: new Set(),
   fitNextDraw: true,
@@ -279,6 +313,7 @@ function onDataLoaded() {
   state.viewMode = "overview";
   state.focusedCommunity = null;
   state.activities = null;
+  state.showDeviantsOnly = false;
   state.expandedItems = new Set();
   state.fitNextDraw = true;
   updatePoSelection();
@@ -378,10 +413,9 @@ function updateModeUi() {
   const focusBtn = document.getElementById("btn-focus");
   const maxItems = document.getElementById("sl-maxitems");
   const maxItemsHint = document.getElementById("maxitems-hint");
+  const deviantsBtn = document.getElementById("btn-deviants-only");
   const clearCommunityBtn = document.getElementById("btn-community-clear");
   const overviewWeight = document.getElementById("sl-overview-weight");
-  const resourceToggle = document.getElementById("tog-resources");
-  const attributeToggle = document.getElementById("tog-attributes");
   const inOverview = state.viewMode === "overview";
   const scope = getSidebarScope();
   const panelTag = document.getElementById("panel-view-tag");
@@ -390,10 +424,10 @@ function updateModeUi() {
   focusBtn.classList.toggle("active", !inOverview);
   focusBtn.disabled = !state.selectedPo;
   maxItems.disabled = inOverview;
+  deviantsBtn.disabled = inOverview;
+  deviantsBtn.classList.toggle("active", state.showDeviantsOnly && !inOverview);
   clearCommunityBtn.disabled = !inOverview || !state.focusedCommunity;
   overviewWeight.disabled = !inOverview;
-  resourceToggle.disabled = !inOverview || !state.focusedCommunity;
-  attributeToggle.disabled = !inOverview || !state.focusedCommunity;
   document.querySelectorAll("#panel [data-scope]").forEach(section => {
     const scopes = (section.dataset.scope ?? "").split(/\s+/).filter(Boolean);
     section.classList.toggle("hidden-by-scope", !scopes.includes(scope));
@@ -407,7 +441,9 @@ function updateModeUi() {
     ? (state.focusedCommunity
         ? "Focused community view: resources and attributes appear on demand, and case links stay local."
         : "Overview first: start with communities, then click one to reveal its cases, resources, and attributes.")
-    : "Limits items to avoid visual overload. 0 = show all.";
+    : (state.showDeviantsOnly
+        ? "Deviants-only mode is active: all non-dominant POItems are shown side by side."
+        : "Limits items to avoid visual overload. 0 = show all.");
 }
 
 function getSidebarScope() {
@@ -423,11 +459,12 @@ function buildActivityFilter() {
 
   activities.forEach(([act, count]) => {
     const color = getStore().activityColorByName?.[act] ?? "#64748b";
+    const checked = state.activities === null || state.activities.has(act);
     const row = document.createElement("div");
     row.className = "act-item";
     const cbId = `act-${act.replace(/\W/g, "_")}`;
     row.innerHTML = `
-      <input type="checkbox" id="${cbId}" checked data-act="${act}">
+      <input type="checkbox" id="${cbId}" ${checked ? "checked" : ""} data-act="${act}">
       <span class="act-swatch" style="background:${color}"></span>
       <label for="${cbId}" title="${act}">${act}</label>
       <span class="act-count">${count}</span>
@@ -435,6 +472,8 @@ function buildActivityFilter() {
     row.querySelector("input").addEventListener("change", onActivityChange);
     container.appendChild(row);
   });
+
+  updateActivityButtonState();
 }
 
 function getCurrentActivityCounts() {
@@ -465,18 +504,34 @@ function onActivityChange() {
   state.activities = checked.length === all.length
     ? null
     : new Set(checked.map(cb => cb.dataset.act));
+  updateActivityButtonState();
   redraw();
+}
+
+function updateActivityButtonState() {
+  const allButton = document.getElementById("btn-act-all");
+  const noneButton = document.getElementById("btn-act-none");
+  const total = document.querySelectorAll("#activity-list input").length;
+  const isAll = state.activities === null;
+  const isNone = state.activities instanceof Set && state.activities.size === 0;
+
+  allButton.classList.toggle("active", isAll);
+  noneButton.classList.toggle("active", isNone);
+  allButton.disabled = total === 0;
+  noneButton.disabled = total === 0;
 }
 
 document.getElementById("btn-act-all").addEventListener("click", () => {
   document.querySelectorAll("#activity-list input").forEach(cb => { cb.checked = true; });
   state.activities = null;
+  updateActivityButtonState();
   redraw();
 });
 
 document.getElementById("btn-act-none").addEventListener("click", () => {
   document.querySelectorAll("#activity-list input").forEach(cb => { cb.checked = false; });
   state.activities = new Set();
+  updateActivityButtonState();
   redraw();
 });
 
@@ -494,6 +549,12 @@ document.getElementById("tog-resources").addEventListener("change", function() {
 });
 document.getElementById("tog-attributes").addEventListener("change", function() {
   setVisibility("attributes", this.checked);
+});
+document.getElementById("tog-sync").addEventListener("change", function() {
+  setVisibility("sync", this.checked);
+});
+document.getElementById("tog-bottleneck").addEventListener("change", function() {
+  setVisibility("bottleneck", this.checked);
 });
 
 function bindSlider(id, key) {
@@ -515,6 +576,12 @@ document.getElementById("sl-maxitems").addEventListener("input", function() {
   redraw();
 });
 
+document.getElementById("btn-deviants-only").addEventListener("click", function() {
+  state.showDeviantsOnly = !state.showDeviantsOnly;
+  this.classList.toggle("active", state.showDeviantsOnly);
+  redraw();
+});
+
 document.getElementById("sl-overview-weight").addEventListener("input", function() {
   const value = parseFloat(this.value);
   document.getElementById("sl-overview-weight-val").textContent = value.toFixed(2);
@@ -523,7 +590,7 @@ document.getElementById("sl-overview-weight").addEventListener("input", function
 });
 
 document.getElementById("btn-fit").addEventListener("click", fitCurrentView);
-document.getElementById("btn-reset-zoom").addEventListener("click", fitCurrentView);
+document.getElementById("btn-reset-zoom").addEventListener("click", resetCurrentZoom);
 
 window.addEventListener("keydown", event => {
   if (shouldIgnoreShortcut(event)) return;
@@ -558,7 +625,7 @@ window.addEventListener("keydown", event => {
       break;
     case "0":
       event.preventDefault();
-      fitCurrentView();
+      resetCurrentZoom();
       break;
     case "f":
     case "F":
@@ -687,18 +754,22 @@ function redraw() {
   if (state.viewMode === "focus") autoClutterGuard(graphs[0]);
   else clearStatusWarning();
 
-  draw(graphs, state.viewMode === "overview" ? new Set() : state.expandedItems, {
+  const layout = draw(graphs, state.viewMode === "overview" ? new Set() : state.expandedItems, {
     fit: state.fitNextDraw,
     minScale: state.viewMode === "overview" ? OVERVIEW_MIN_SCALE : undefined,
+    layoutFilters: {
+      showDeviantsOnly: state.showDeviantsOnly,
+    },
   });
   state.fitNextDraw = false;
   updatePoSummary();
   updateCommunityPanel(graphs[0]);
-  updateStats(graphs);
-  updateStatusBar(graphs);
+  updateStats(graphs, layout);
+  updateStatusBar(graphs, layout);
+  updatePatternPanel(layout);
 }
 
-function summarizeGraphs(graphs) {
+function summarizeGraphs(graphs, layout = null) {
   if (state.viewMode === "overview") {
     const meta = graphs[0]?.meta ?? {};
     return {
@@ -711,6 +782,20 @@ function summarizeGraphs(graphs) {
       dfItemCount: meta.dfItemCount ?? 0,
       dfPoCount: meta.dfPoCount ?? 0,
       overviewEdgeCount: meta.overviewEdgeCount ?? 0,
+    };
+  }
+
+  if (layout?.summary) {
+    return {
+      poCount: graphs.length,
+      totalEvents: layout.summary.totalEvents ?? 0,
+      filteredEvents: layout.summary.filteredEvents ?? 0,
+      totalItems: layout.summary.totalItems ?? 0,
+      shownItems: layout.summary.shownItems ?? 0,
+      dfItemCount: layout.summary.dfItemCount ?? 0,
+      dfPoCount: layout.summary.dfPoCount ?? 0,
+      overviewEdgeCount: 0,
+      clusterCount: 0,
     };
   }
 
@@ -736,8 +821,8 @@ function summarizeGraphs(graphs) {
   });
 }
 
-function updateStats(graphs) {
-  const summary = summarizeGraphs(graphs);
+function updateStats(graphs, layout = null) {
+  const summary = summarizeGraphs(graphs, layout);
   document.getElementById("stat-scope-label").textContent = state.viewMode === "overview" ? "POs shown" : "Scope";
   if (state.viewMode === "overview") {
     document.getElementById("stat-scope-label").textContent = "Cases shown";
@@ -761,8 +846,8 @@ function updateStats(graphs) {
     : summary.dfPoCount;
 }
 
-function updateStatusBar(graphs) {
-  const summary = summarizeGraphs(graphs);
+function updateStatusBar(graphs, layout = null) {
+  const summary = summarizeGraphs(graphs, layout);
   document.getElementById("sb-view").textContent = state.viewMode;
   document.getElementById("sb-po").textContent = state.viewMode === "overview"
     ? (state.focusedCommunity
@@ -771,6 +856,35 @@ function updateStatusBar(graphs) {
     : graphs[0]?.po ?? "-";
   document.getElementById("sb-items").textContent = summary.shownItems;
   document.getElementById("sb-events").textContent = summary.filteredEvents;
+}
+
+function updatePatternPanel(layout) {
+  const panel = document.getElementById("pattern-summary");
+  if (!panel) return;
+  if (state.viewMode !== "focus") {
+    panel.textContent = "Dominant lifecycle pattern is shown in focused PO mode.";
+    return;
+  }
+
+  const dominantPattern = layout?.patterns?.dominantPattern ?? [];
+  const entityPatterns = layout?.patterns?.entityPatterns ?? {};
+  const deviantCount = Object.values(entityPatterns).filter(entry => entry && entry.followsDominant === false).length;
+
+  if (!dominantPattern.length) {
+    panel.innerHTML = `
+      <div><b>No dominant pattern available</b></div>
+      <div style="margin-top:4px">The current filters leave no complete lifecycle sequence to summarize.</div>
+    `;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div><b>${dominantPattern.length}</b> activities in the dominant lifecycle</div>
+    <div style="margin-top:4px">${deviantCount} deviating ${deviantCount === 1 ? "entity" : "entities"} in the current PO scope</div>
+    <ol class="pattern-list">
+      ${dominantPattern.map(activity => `<li>${_escapeHtml(activity)}</li>`).join("")}
+    </ol>
+  `;
 }
 
 function _escapeHtml(value) {
@@ -785,8 +899,8 @@ function showTooltip(html, x, y) {
   tip.innerHTML = html;
   const cw = document.getElementById("canvas-wrap").clientWidth;
   const ch = document.getElementById("canvas-wrap").clientHeight;
-  const tw = 280;
-  const th = 120;
+  const tw = tip.offsetWidth || 280;
+  const th = tip.offsetHeight || 140;
   tip.style.left = Math.min(x + 14, cw - tw) + "px";
   tip.style.top = Math.min(y - 10, ch - th) + "px";
   tip.classList.add("show");
@@ -813,6 +927,10 @@ function fitCurrentView() {
   fitToView(undefined, {
     minScale: state.viewMode === "overview" ? OVERVIEW_MIN_SCALE : undefined,
   });
+}
+
+function resetCurrentZoom() {
+  resetZoom({ animate: true });
 }
 
 function hasDataLoaded() {

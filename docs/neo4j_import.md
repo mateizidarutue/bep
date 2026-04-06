@@ -1,5 +1,5 @@
 # Loading BPIC 2019 EKG into Neo4j
-
+![alt text](image.png)
 ## Prerequisites
 
 - Neo4j Desktop (≥ 4.x) with APOC plugin

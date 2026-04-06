@@ -24,8 +24,9 @@ let _expanded = new Set();
 let _currentTransform = null;
 let _lastTotalHeight = 0;
 let _lastContentBounds = null;
+let _selection = null;
 
-const vis = { dfItem: true, dfPo: false, corr: false, resources: false, attributes: false };
+const vis = { dfItem: true, dfPo: false, corr: false, resources: false, attributes: false, sync: true, bottleneck: true };
 const opa = { dfItem: 0.7, dfPo: 0.2, corr: 0.2 };
 const FIT_PAD_X = 52;
 const FIT_PAD_Y = 44;
@@ -59,6 +60,9 @@ export function init(svgId, onTooltipShow, onTooltipHide, onItemExpand, onPoSele
     });
   svg.call(zoom);
   svg.on("dblclick.zoom", null);
+  svg.on("click.selection-clear", event => {
+    if (event.target === svg.node()) _clearSelection();
+  });
 
   _cb = { onTooltipShow, onTooltipHide, onItemExpand, onPoSelect, onCommunitySelect };
 }
@@ -71,7 +75,7 @@ export function draw(graphs, expanded, options = {}) {
   _expanded = expanded;
 
   const w      = svg.node().clientWidth;
-  const layout = computeLayout(graphs, expanded, w);
+  const layout = computeLayout(graphs, expanded, w, options.layoutFilters ?? {});
 
   gRoot.selectAll("*").remove();
 
@@ -95,6 +99,7 @@ export function draw(graphs, expanded, options = {}) {
 
   _lastTotalHeight = layout.totalHeight;
   _applyVisibility();
+  _applySelectionState();
   _updateTranslateExtent(layout.totalHeight);
   if (options.fit ?? true) {
     fitToView(layout.totalHeight, {
@@ -104,6 +109,7 @@ export function draw(graphs, expanded, options = {}) {
   } else {
     gRoot.attr("transform", _currentTransform ?? d3.zoomIdentity);
   }
+  return layout;
 }
 
 export function setVisibility(key, val) {
@@ -123,8 +129,9 @@ export function fitToView(totalHeight, options = {}) {
   _applyTransform(transform, options.animate ?? true);
 }
 
-export function resetZoom() {
-  fitToView(undefined, { animate: true });
+export function resetZoom(options = {}) {
+  if (!svg || !zoom) return;
+  _applyTransform(d3.zoomIdentity, options.animate ?? true);
 }
 
 export function panBy(dx, dy, options = {}) {
@@ -594,7 +601,16 @@ function _drawOverviewBlock(block, lBg, lCorr, lNodes, lLabels) {
 function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
   const { item, midY, rowY, h, color, isExp, corrEdge,
           timelineNodes, dfItemEdges, resourceNodes, resourceLinks,
-          itemAttrs, evCount, dateRange, laneX2 } = row;
+          itemAttrs, evCount, dateRange, laneX2, followsDominant } = row;
+  const laneFill = followsDominant
+    ? (isExp ? `${color}12` : "transparent")
+    : (isExp ? "rgba(217,119,6,0.10)" : "rgba(217,119,6,0.04)");
+  const laneStroke = followsDominant
+    ? (isExp ? `${color}40` : "transparent")
+    : (isExp ? "rgba(217,119,6,0.24)" : "rgba(217,119,6,0.16)");
+  const laneHoverFill = followsDominant ? `${color}08` : "rgba(217,119,6,0.08)";
+  const laneHoverStroke = followsDominant ? `${color}30` : "rgba(217,119,6,0.22)";
+  const laneLabel = `Item ${_suffix(item)}${followsDominant ? "" : " ⚠"}`;
 
   // CORR dash: POItem → PO node
   lCorr.append("line").attr("class", "edge-corr")
@@ -610,13 +626,15 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
     .attr("x", laneX1).attr("y", rowY + 6)
     .attr("width", laneRightX - laneX1)
     .attr("height", h - 12)
-    .attr("fill",   isExp ? `${color}12` : "transparent")
-    .attr("stroke", isExp ? `${color}40` : "transparent")
+    .attr("fill", laneFill)
+    .attr("stroke", laneStroke)
     .attr("stroke-width", 0.8).attr("rx", 8)
+    .attr("class", followsDominant ? "item-lane" : "item-lane item-lane-deviant")
+    .attr("data-entity-id", item)
     .style("cursor", "pointer")
     .on("click",     () => _cb.onItemExpand(item))
-    .on("mouseover", function() { if (!isExp) d3.select(this).attr("fill", `${color}08`).attr("stroke", `${color}30`); })
-    .on("mouseout",  function() { if (!isExp) d3.select(this).attr("fill", "transparent").attr("stroke", "transparent"); });
+    .on("mouseover", function() { if (!isExp) d3.select(this).attr("fill", laneHoverFill).attr("stroke", laneHoverStroke); })
+    .on("mouseout",  function() { if (!isExp) d3.select(this).attr("fill", laneFill).attr("stroke", laneStroke); });
 
   // POItem node
   const itemG = lNodes.append("g")
@@ -628,6 +646,7 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
        <div class="tip-row">Type: <b>POItem</b></div>
        <div class="tip-row">Events: <b>${evCount}</b></div>
        <div class="tip-row">Range: <b>${dateRange}</b></div>
+       <div class="tip-row">Dominant pattern: <b>${followsDominant ? "Yes" : "No"}</b></div>
        ${_tooltipRows(itemAttrs, ["Item_Type", "Item_Category", "Goods_Receipt", "GR_Based_Inv_Verif"])}
        <div class="tip-row" style="margin-top:5px;color:var(--col-po);font-size:10px">${isExp ? "▲ Click to collapse" : "▼ Click to expand timeline"}</div>`,
       ev.offsetX, ev.offsetY
@@ -664,7 +683,7 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
       .attr("font-family", "JetBrains Mono, monospace")
       .attr("font-size", "11px").attr("font-weight", "600")
       .attr("fill", color)
-      .text(`Item ${_suffix(item)}`);
+      .text(laneLabel);
     lLabels.append("text")
       .attr("x", ITEM_X + ITEM_R + 12).attr("y", midY + 9)
       .attr("font-family", "JetBrains Mono, monospace")
@@ -677,7 +696,7 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
       .attr("text-anchor", "middle")
       .attr("font-family", "JetBrains Mono, monospace")
       .attr("font-size", "8px").attr("fill", color).attr("opacity", 0.65)
-      .text(`Item ${_suffix(item)}`);
+      .text(laneLabel);
     lLabels.append("text")
       .attr("x", ITEM_X + ITEM_R + 14).attr("y", rowY + 18)
       .attr("font-family", "JetBrains Mono, monospace")
@@ -699,6 +718,7 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
 
   const firstX = timelineNodes[0].x;
   const lastX  = timelineNodes.at(-1).x;
+  const bottleneckEdges = dfItemEdges.filter(d => d.isBottleneck);
 
   // Timeline baseline
   lNodes.append("line")
@@ -722,9 +742,28 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
     .attr("stroke", color).attr("stroke-width", 0.8)
     .attr("stroke-dasharray", "3 3").attr("opacity", 0.4);
 
+  if (bottleneckEdges.length) {
+    const bottleneckOverlay = lBg.append("g").attr("class", "bottleneck-overlay-group");
+    bottleneckOverlay.selectAll(null).data(bottleneckEdges).join("rect")
+      .attr("class", "bottleneck-overlay")
+      .attr("x", d => _bottleneckBandX(d))
+      .attr("y", midY - 13)
+      .attr("width", d => _bottleneckBandWidth(d))
+      .attr("height", 26)
+      .attr("rx", 13)
+      .attr("fill", "rgba(217,119,6,0.10)")
+      .attr("stroke", "rgba(217,119,6,0.26)")
+      .attr("stroke-width", 1.1)
+      .attr("pointer-events", "none");
+  }
+
   // DF item edges
   lDfItem.selectAll(null).data(dfItemEdges).join("path")
-    .attr("class", "edge-dfitem")
+    .attr("class", d => d.isBottleneck ? "edge-dfitem edge-dfitem-bottleneck" : "edge-dfitem")
+    .attr("data-edge-id", d => d.id)
+    .attr("data-entity-id", d => d.entityId)
+    .attr("data-source-id", d => d.sourceId)
+    .attr("data-target-id", d => d.targetId)
     .attr("d", d => {
       if (d.type === "arc") {
         const r = 16;
@@ -732,13 +771,53 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
       }
       return `M${d.x1},${d.y1} L${d.x2},${d.y2}`;
     })
-    .attr("fill", "none").attr("stroke", d => d.color)
-    .attr("stroke-width", 1.5).attr("marker-end", "url(#arr-dfitem)");
+    .attr("fill", "none")
+    .attr("stroke", d => d.isBottleneck ? "#d97706" : d.color)
+    .attr("stroke-width", d => d.isBottleneck ? 2.6 : 1.5)
+    .attr("stroke-dasharray", d => d.isBottleneck ? "6 4" : null)
+    .attr("marker-end", d => d.isBottleneck ? "url(#arr-dfitem-bottleneck)" : "url(#arr-dfitem)")
+    .style("cursor", "pointer")
+    .on("mousemove", (ev, d) => _cb.onTooltipShow(_edgeTooltipHtml(d), ev.offsetX, ev.offsetY))
+    .on("click", (ev, d) => {
+      ev.stopPropagation();
+      _toggleSelection({ kind: "edge", edgeId: d.id, entityId: d.entityId, sourceId: d.sourceId, targetId: d.targetId });
+    })
+    .on("mouseleave", _cb.onTooltipHide);
+
+  if (bottleneckEdges.length) {
+    const bottleneckBadge = lLabels.append("g").attr("class", "bottleneck-badge-group");
+    const badgeG = bottleneckBadge.selectAll(null).data(bottleneckEdges).join("g")
+      .attr("class", "bottleneck-badge")
+      .attr("transform", d => `translate(${_bottleneckMidX(d)},${midY - 22})`)
+      .attr("pointer-events", "none");
+
+    badgeG.append("rect")
+      .attr("x", d => -_bottleneckBadgeHalfWidth(d))
+      .attr("y", -8)
+      .attr("width", d => _bottleneckBadgeHalfWidth(d) * 2)
+      .attr("height", 16)
+      .attr("rx", 8)
+      .attr("fill", "rgba(255,247,237,0.96)")
+      .attr("stroke", "rgba(217,119,6,0.55)")
+      .attr("stroke-width", 1);
+
+    badgeG.append("text")
+      .attr("text-anchor", "middle")
+      .attr("dy", "0.34em")
+      .attr("font-family", "JetBrains Mono, monospace")
+      .attr("font-size", "8px")
+      .attr("font-weight", "700")
+      .attr("fill", "#b45309")
+      .text(d => _compactGapLabel(d.gapHours));
+  }
 
   _drawResourceOverlay(lRes, row);
 
   // Event nodes
   const evG = lNodes.selectAll(null).data(timelineNodes).join("g")
+    .attr("class", d => d.isSyncEvent ? "event-node event-sync-group" : "event-node")
+    .attr("data-event-id", d => d.id)
+    .attr("data-entity-id", d => d.poitem_id)
     .attr("transform", d => `translate(${d.x},${d.y})`)
     .style("cursor", "pointer");
 
@@ -748,10 +827,28 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
     .attr("fill", "transparent").attr("stroke", "transparent")
     .attr("class", "ev-hover-ring");
 
+  evG.filter(d => d.isSyncEvent)
+    .append("circle")
+    .attr("r", d => _eventRadius(d) + 5)
+    .attr("fill", "none")
+    .attr("stroke", "rgba(255,255,255,0.96)")
+    .attr("stroke-width", 2.2)
+    .attr("class", "sync-outer-ring");
+
+  evG.filter(d => d.isSyncEvent)
+    .append("circle")
+    .attr("r", d => _eventRadius(d) + 7)
+    .attr("fill", "none")
+    .attr("stroke", "rgba(37,99,235,0.30)")
+    .attr("stroke-width", 1.6)
+    .attr("class", "sync-pulse-ring");
+
   evG.append("circle")
-    .attr("r", EVENT_R)
+    .attr("r", d => _eventRadius(d))
     .attr("fill", d => d.activityColor ?? d.color).attr("fill-opacity", 0.9)
-    .attr("stroke", d => d.resourceColor ?? "#f8fbff").attr("stroke-width", 1.6);
+    .attr("stroke", d => d.resourceColor ?? "#f8fbff")
+    .attr("stroke-width", d => d.isSyncEvent ? 2 : 1.6)
+    .attr("class", d => d.isSyncEvent ? "event-circle event-circle-sync" : "event-circle");
 
   evG
     .on("mousemove", function(ev, d) {
@@ -767,11 +864,23 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
          <div class="tip-row">ID: <b>${d.id}</b></div>
          <div class="tip-row">Date: <b>${fmt}</b></div>
          <div class="tip-row">POItem: <b>${d.poitem_id}</b></div>
+         ${d.isSyncEvent ? `<div class="tip-row">Sync degree: <b>${d.syncDegree}</b></div>` : ""}
+         ${d.isSyncEvent && d.sharedEntityIds?.length ? `<div class="tip-row">Shared by: <b>${d.sharedEntityIds.join(", ")}</b></div>` : ""}
          ${_hasResourceValue(d.org_resource) ? `<div class="tip-row">Resource: <b>${d.org_resource}</b></div>` : ""}
          ${d.lifecycle_transition ? `<div class="tip-row">Lifecycle: <b>${d.lifecycle_transition}</b></div>` : ""}
-         ${_tooltipRows(d, ["Document_Type", "Source", "Vendor", "Company"])}`,
+         ${_tooltipRows(d, ["Document_Type", "Source", "Vendor", "Company"])}
+         ${d.isSyncEvent ? _syncContextRows(d.syncContexts ?? []) : ""}`,
         ev.offsetX, ev.offsetY
       );
+    })
+    .on("click", function(ev, d) {
+      ev.stopPropagation();
+      _toggleSelection({
+        kind: "event",
+        eventId: d.id,
+        entityId: d.poitem_id,
+        relatedEntityIds: d.sharedEntityIds ?? [d.poitem_id],
+      });
     })
     .on("mouseleave", function() {
       d3.select(this).select(".ev-hover-ring")
@@ -784,7 +893,7 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
     if (!n) return;
     const anchor = i === 0 ? "start" : "end";
     lLabels.append("text")
-      .attr("x", n.x).attr("y", midY + EVENT_R + 13)
+      .attr("x", n.x).attr("y", midY + _eventRadius(n) + 13)
       .attr("text-anchor", anchor)
       .attr("font-family", "JetBrains Mono, monospace")
       .attr("font-size", "8px").attr("fill", "var(--text-dim)")
@@ -793,7 +902,7 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
 
   // Event count label at the right end of the timeline
   lLabels.append("text")
-    .attr("x", lastX + EVENT_R + 10).attr("y", midY + 4)
+    .attr("x", lastX + _eventRadius(timelineNodes.at(-1)) + 10).attr("y", midY + 4)
     .attr("font-family", "JetBrains Mono, monospace")
     .attr("font-size", "9px").attr("fill", color).attr("opacity", 0.5)
     .text(`${timelineNodes.length} ev`);
@@ -853,14 +962,120 @@ function _applyVisibility() {
     .attr("display", vis.dfPo  ? null : "none").attr("opacity", opa.dfPo);
   gRoot.selectAll(".edge-dfitem")
     .attr("display", vis.dfItem ? null : "none").attr("opacity", opa.dfItem);
+  gRoot.selectAll(".edge-dfitem-bottleneck")
+    .attr("display", vis.dfItem ? null : "none")
+    .attr("opacity", vis.dfItem ? opa.dfItem * (vis.bottleneck ? 1 : 0.22) : 0);
+  gRoot.selectAll(".bottleneck-overlay")
+    .attr("display", vis.dfItem ? null : "none")
+    .attr("opacity", vis.dfItem ? (vis.bottleneck ? 1 : 0.18) : 0);
+  gRoot.selectAll(".bottleneck-badge")
+    .attr("display", vis.dfItem ? null : "none")
+    .attr("opacity", vis.dfItem ? (vis.bottleneck ? 1 : 0.22) : 0);
   gRoot.selectAll(".edge-corr")
     .attr("display", vis.corr  ? null : "none").attr("opacity", opa.corr);
+  gRoot.selectAll(".event-sync-group")
+    .attr("opacity", vis.sync ? 1 : 0.22);
   gRoot.selectAll(".resource-overlay")
     .attr("display", vis.resources ? null : "none");
   gRoot.selectAll(".resource-satellite")
     .attr("display", vis.resources ? null : "none");
   gRoot.selectAll(".attribute-satellite")
     .attr("display", vis.attributes ? null : "none");
+}
+
+function _toggleSelection(selection) {
+  if (_selection && JSON.stringify(_selection) === JSON.stringify(selection)) {
+    _selection = null;
+  } else {
+    _selection = selection;
+  }
+  _applySelectionState();
+}
+
+function _clearSelection() {
+  _selection = null;
+  _applySelectionState();
+}
+
+function _applySelectionState() {
+  if (!gRoot) return;
+
+  const eventCircles = gRoot.selectAll(".event-circle");
+  const edges = gRoot.selectAll(".edge-dfitem");
+  const lanes = gRoot.selectAll(".item-lane");
+
+  eventCircles.classed("highlighted", false).classed("dimmed", false);
+  edges.classed("edge-highlighted", false).classed("edge-dimmed", false);
+  lanes.classed("item-highlighted", false).classed("item-dimmed", false);
+
+  if (!_selection) return;
+
+  if (_selection.kind === "event") {
+    const eventExists = gRoot.selectAll(`.event-node[data-event-id="${_selection.eventId}"]`).size() > 0;
+    if (!eventExists) {
+      _selection = null;
+      return;
+    }
+    const entitySet = new Set(_selection.relatedEntityIds?.length ? _selection.relatedEntityIds : [_selection.entityId]);
+    eventCircles
+      .classed("highlighted", function() {
+        return d3.select(this.parentNode).attr("data-event-id") === _selection.eventId;
+      })
+      .classed("dimmed", function() {
+        return d3.select(this.parentNode).attr("data-event-id") !== _selection.eventId;
+      });
+
+    edges
+      .classed("edge-highlighted", function() {
+        const edge = d3.select(this);
+        return edge.attr("data-source-id") === _selection.eventId || edge.attr("data-target-id") === _selection.eventId;
+      })
+      .classed("edge-dimmed", function() {
+        const edge = d3.select(this);
+        return edge.attr("data-source-id") !== _selection.eventId && edge.attr("data-target-id") !== _selection.eventId;
+      });
+
+    lanes
+      .classed("item-highlighted", function() {
+        return entitySet.has(d3.select(this).attr("data-entity-id"));
+      })
+      .classed("item-dimmed", function() {
+        return !entitySet.has(d3.select(this).attr("data-entity-id"));
+      });
+    return;
+  }
+
+  if (_selection.kind === "edge") {
+    const edgeExists = gRoot.selectAll(`.edge-dfitem[data-edge-id="${_selection.edgeId}"]`).size() > 0;
+    if (!edgeExists) {
+      _selection = null;
+      return;
+    }
+    const activeEvents = new Set([_selection.sourceId, _selection.targetId]);
+    eventCircles
+      .classed("highlighted", function() {
+        return activeEvents.has(d3.select(this.parentNode).attr("data-event-id"));
+      })
+      .classed("dimmed", function() {
+        return !activeEvents.has(d3.select(this.parentNode).attr("data-event-id"));
+      });
+
+    edges
+      .classed("edge-highlighted", function() {
+        return d3.select(this).attr("data-edge-id") === _selection.edgeId;
+      })
+      .classed("edge-dimmed", function() {
+        return d3.select(this).attr("data-edge-id") !== _selection.edgeId;
+      });
+
+    lanes
+      .classed("item-highlighted", function() {
+        return d3.select(this).attr("data-entity-id") === _selection.entityId;
+      })
+      .classed("item-dimmed", function() {
+        return d3.select(this).attr("data-entity-id") !== _selection.entityId;
+      });
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1048,6 +1263,85 @@ function _formatAttrValue(key, value) {
   return key === "Document_Type" ? _ellipsis(value, 20) : value;
 }
 
+function _eventRadius(d) {
+  return d?.isSyncEvent ? EVENT_R + Math.min(Math.max((d.syncDegree ?? 1) - 1, 1), 5) * 1.7 : EVENT_R;
+}
+
+function _syncContextRows(syncContexts) {
+  if (!syncContexts?.length) return "";
+  return `
+    <div class="tip-divider"></div>
+    <div class="tip-subtitle">Shared lifecycle context</div>
+    ${syncContexts.map(context => `
+      <div class="tip-row"><b>${context.entityId}</b></div>
+      <div class="tip-row">Prev: <b>${_neighborSummary(context.predecessorActivities)}</b></div>
+      <div class="tip-row">Next: <b>${_neighborSummary(context.successorActivities)}</b></div>
+    `).join("")}
+  `;
+}
+
+function _neighborSummary(activities) {
+  return activities?.length ? activities.join(", ") : "—";
+}
+
+function _eventTooltipHtml(d) {
+  const fmt = d.date?.toLocaleDateString("en-GB", {
+    day: "numeric", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  }) ?? "—";
+  return `<div class="tip-title">${d.activity}</div>
+    <div class="tip-row">ID: <b>${d.id}</b></div>
+    <div class="tip-row">Date: <b>${fmt}</b></div>
+    <div class="tip-row">POItem: <b>${d.poitem_id}</b></div>
+    ${d.isSyncEvent ? `<div class="tip-row">Sync degree: <b>${d.syncDegree}</b></div>` : ""}
+    ${d.isSyncEvent && d.sharedEntityIds?.length ? `<div class="tip-row">Shared by: <b>${d.sharedEntityIds.join(", ")}</b></div>` : ""}
+    ${_hasResourceValue(d.org_resource) ? `<div class="tip-row">Resource: <b>${d.org_resource}</b></div>` : ""}
+    ${d.lifecycle_transition ? `<div class="tip-row">Lifecycle: <b>${d.lifecycle_transition}</b></div>` : ""}
+    ${_tooltipRows(d, ["Document_Type", "Source", "Vendor", "Company"])}
+    ${d.isSyncEvent ? _syncContextRows(d.syncContexts ?? []) : ""}`;
+}
+
+function _edgeTooltipHtml(d) {
+  return `<div class="tip-title">DF edge</div>
+    <div class="tip-row">From: <b>${d.sourceActivity}</b></div>
+    <div class="tip-row">To: <b>${d.targetActivity}</b></div>
+    <div class="tip-row">Gap: <b>${_formatGapHours(d.gapHours)}</b></div>
+    <div class="tip-row">Bottleneck: <b>${d.isBottleneck ? "Yes" : "No"}</b></div>`;
+}
+
+function _formatGapHours(hours) {
+  if (!Number.isFinite(hours)) return "n/a";
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    const remainderHours = Math.round(hours - days * 24);
+    return `${days}d ${remainderHours}h`;
+  }
+  return `${hours.toFixed(hours >= 10 ? 0 : 1)}h`;
+}
+
+function _compactGapLabel(hours) {
+  if (!Number.isFinite(hours)) return "gap";
+  if (hours >= 24) return `${Math.max(1, Math.round(hours / 24))}d`;
+  return `${Math.max(1, Math.round(hours))}h`;
+}
+
+function _bottleneckMidX(edge) {
+  return (edge.x1 + edge.x2) / 2;
+}
+
+function _bottleneckBandWidth(edge) {
+  return Math.max(Math.abs(edge.x2 - edge.x1) + 16, 32);
+}
+
+function _bottleneckBandX(edge) {
+  return Math.min(edge.x1, edge.x2) - 8;
+}
+
+function _bottleneckBadgeHalfWidth(edge) {
+  const label = _compactGapLabel(edge.gapHours);
+  return Math.max(14, 7 + label.length * 3.2);
+}
+
 function _addMarkers(defs) {
   function mk(id, color, size = 5) {
     defs.append("marker")
@@ -1058,6 +1352,7 @@ function _addMarkers(defs) {
       .append("path").attr("d", "M0,-3L6,0L0,3").attr("fill", color);
   }
   mk("arr-dfitem", "rgba(34,48,71,0.42)");
+  mk("arr-dfitem-bottleneck", "#d97706");
   mk("arr-dfpo",   PO_COLOR);
   mk("arr-corr",   "rgba(34,48,71,0.22)", 4);
 }

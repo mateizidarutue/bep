@@ -1,37 +1,128 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EKG Layout - BPIC 2019</title>
+  <title>EKG Layout Prototype</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 </head>
 <body>
 
+<div id="landing-screen" class="app-screen">
+  <div class="landing-shell">
+    <section class="landing-hero">
+      <div class="landing-kicker">Bachelor Thesis Evaluation Artifact</div>
+      <h1>Object-Centric Process Comprehension for Event Knowledge Graphs</h1>
+      <p>
+        Load an event log, then move into a task-oriented analysis workspace with dedicated views for locating lifecycle paths,
+        comparing instances, identifying synchronization points, and summarizing dominant flow.
+      </p>
+      <div class="landing-action-row">
+        <button class="btn-small landing-primary" id="btn-home-load-xes">Upload XES Log</button>
+        <button class="btn-small" id="btn-home-load-csv">Load EKG CSV Bundle</button>
+        <button class="btn-small" id="btn-home-open-workspace" disabled>Open Workspace</button>
+      </div>
+      <div id="landing-data-status" class="landing-data-status">No dataset loaded yet. Import an XES log or a processed CSV bundle to continue.</div>
+    </section>
+
+    <section class="landing-import-grid">
+      <article class="landing-info-card">
+        <div class="landing-card-kicker">Import</div>
+        <h2>XES Log Ingest</h2>
+        <p>Upload a standard XES file directly in the browser. If a purchasing document attribute is present, it becomes the PO container; otherwise the case identifier is used.</p>
+      </article>
+      <article class="landing-info-card">
+        <div class="landing-card-kicker">Fallback</div>
+        <h2>Preprocessed EKG CSVs</h2>
+        <p>Load the existing <code>events.csv</code>, <code>entities.csv</code>, <code>corr.csv</code>, and <code>df.csv</code> bundle when you already ran the conversion pipeline.</p>
+      </article>
+      <article class="landing-info-card">
+        <div class="landing-card-kicker">Navigation</div>
+        <h2>Task-Oriented Workspace</h2>
+        <p>After import, the workspace separates dense analyses into dedicated screens instead of forcing every control and every view onto one canvas.</p>
+      </article>
+    </section>
+
+    <section class="landing-view-grid">
+      <article class="landing-view-card">
+        <div class="landing-card-kicker">T1 Locate</div>
+        <h3>Swim-Lane Detail</h3>
+        <p>Trace one entity instance through its temporally ordered DF path, inspect its events, and read the local process context inside one purchase order.</p>
+        <div class="landing-task-tags"><span>T1</span><span>T2</span><span>T4</span></div>
+        <button class="btn-small" data-open-view="detail" disabled>Open Swim-Lane</button>
+      </article>
+      <article class="landing-view-card">
+        <div class="landing-card-kicker">T2 Compare</div>
+        <h3>Variant Landscape</h3>
+        <p>Compare dominant and deviating lifecycle variants across instances, then drill into a selected variant without crowding the main workspace.</p>
+        <div class="landing-task-tags"><span>T2</span><span>T4</span></div>
+        <button class="btn-small" data-open-view="variants" disabled>Open Variants</button>
+      </article>
+      <article class="landing-view-card">
+        <div class="landing-card-kicker">T3 Identify</div>
+        <h3>Synchronization Lens</h3>
+        <p>Isolate shared events and participating lifecycles so synchronization points and inter-entity interactions stand out immediately.</p>
+        <div class="landing-task-tags"><span>T3</span></div>
+        <button class="btn-small" data-open-view="sync" disabled>Open Sync Lens</button>
+      </article>
+      <article class="landing-view-card">
+        <div class="landing-card-kicker">T4 Summarize</div>
+        <h3>Activity Relations</h3>
+        <p>Read the aggregated activity flow, transition matrix, and strongest transitions to summarize dominant execution structure and bottlenecks.</p>
+        <div class="landing-task-tags"><span>T4</span></div>
+        <button class="btn-small" data-open-view="relations" disabled>Open Relations</button>
+      </article>
+      <article class="landing-view-card">
+        <div class="landing-card-kicker">T2 Compare</div>
+        <h3>Variant Cohort</h3>
+        <p>After selecting a lifecycle variant, compare the matching purchase orders side by side in a dedicated cohort screen instead of collapsing them into the canvas.</p>
+        <div class="landing-task-tags"><span>T2</span><span>T4</span></div>
+        <button class="btn-small" data-open-view="cohort" disabled>Open Cohort</button>
+      </article>
+      <article class="landing-view-card">
+        <div class="landing-card-kicker">Guide</div>
+        <h3>Workspace Hub</h3>
+        <p>Use the hub as the analysis starting point. It explains what each view is for and routes you directly to the most relevant screen for T1–T4.</p>
+        <div class="landing-task-tags"><span>T1</span><span>T2</span><span>T3</span><span>T4</span></div>
+        <button class="btn-small" data-open-view="hub" disabled>Open Hub</button>
+      </article>
+    </section>
+  </div>
+  <input type="file" id="xes-input" accept=".xes,.xml" style="display:none">
+</div>
+
+<div id="workspace-shell" class="app-screen hidden">
 <div id="header">
-  <span class="header-title">EKG <span>Layout</span> Prototype</span>
+  <span class="header-title"><span class="header-title-ekg">EKG</span><span class="header-title-sub">Layout Prototype</span></span>
   <div class="header-sep"></div>
   <span style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono)">
-    BPIC Challenge 2019 · Swim-lane + Temporal x-axis · Overview + Focus
+    Task-oriented workspace &middot; Thesis evaluation artifact
   </span>
   <div class="header-actions">
-    <div class="view-switch">
-      <button class="btn-small" id="btn-overview">Overview</button>
-      <button class="btn-small" id="btn-focus">Selected PO</button>
+    <div class="view-switch workspace-nav">
+      <button class="btn-small" id="btn-home">Home</button>
+      <button class="btn-small" id="btn-hub">Workspace</button>
+      <button class="btn-small" id="btn-overview">Variants</button>
+      <button class="btn-small" id="btn-relations-view">Relations</button>
+      <button class="btn-small" id="btn-cohort-view">Cohort</button>
+      <button class="btn-small" id="btn-sync-view">Sync Lens</button>
+      <button class="btn-small" id="btn-focus">Swim-Lane</button>
     </div>
+    <span id="workspace-data-badge" class="workspace-data-badge">No dataset</span>
     <button class="btn-small" id="btn-fit">Fit view</button>
     <button class="btn-small" id="btn-reset-zoom">Reset zoom</button>
-    <button class="btn-small" id="btn-load-files">Load CSVs...</button>
+    <button class="btn-small" id="btn-load-xes">Import XES</button>
+    <button class="btn-small" id="btn-load-files">Load CSVs</button>
     <input type="file" id="file-input" accept=".csv" multiple style="display:none">
   </div>
 </div>
 
 <div id="main">
   <div id="panel">
-    <div id="panel-view-tag">Community Overview</div>
+    <div id="panel-view-tag">Variant Overview</div>
 
-    <div class="panel-section" data-scope="po">
+    <div class="panel-section" data-scope="po variant">
       <div class="panel-section-title">Purchase Order</div>
       <div class="community-summary" id="po-summary">
         Select a PO to inspect its details, items, and event structure.
@@ -40,168 +131,93 @@
       <div class="po-list" id="po-list"></div>
     </div>
 
-    <div class="panel-section" data-scope="community community-detail">
-      <div class="panel-section-title">Community Focus</div>
+    <div class="panel-section" data-scope="overview variant">
+      <div class="panel-section-title">Variant Selection</div>
+      <div class="community-summary" id="variant-summary">
+        Click a variant row in the overview to focus matching instances in the swim-lane view.
+      </div>
       <div class="btn-row">
-        <button class="btn-small" id="btn-community-clear">All communities</button>
-      </div>
-      <div class="community-summary" id="community-summary">
-        Community overview is shown here. Click a community bubble to focus it.
-      </div>
-      <div class="community-list" id="community-list"></div>
-    </div>
-
-    <div class="panel-section" data-scope="po">
-      <div class="panel-section-title">Edge types</div>
-      <div class="toggle-row">
-        <span class="toggle-label">
-          <span class="swatch" style="background:rgba(36,52,73,0.55)"></span>
-          DF - item level
-        </span>
-        <label class="toggle">
-          <input type="checkbox" id="tog-dfitem" checked>
-          <div class="toggle-track"></div>
-        </label>
-      </div>
-      <div class="toggle-row">
-        <span class="toggle-label">
-          <span class="swatch" style="background:#2563eb"></span>
-          DF - PO level
-        </span>
-        <label class="toggle">
-          <input type="checkbox" id="tog-dfpo">
-          <div class="toggle-track"></div>
-        </label>
-      </div>
-      <div class="toggle-row">
-        <span class="toggle-label">
-          <span class="swatch" style="background:rgba(36,52,73,0.22)"></span>
-          CORR edges
-        </span>
-        <label class="toggle">
-          <input type="checkbox" id="tog-corr">
-          <div class="toggle-track"></div>
-        </label>
-      </div>
-      <div class="toggle-row">
-        <span class="toggle-label">
-          <span class="swatch" style="background:rgba(37,99,235,0.45);border:1px solid rgba(255,255,255,0.9)"></span>
-          Sync events
-        </span>
-        <label class="toggle">
-          <input type="checkbox" id="tog-sync" checked>
-          <div class="toggle-track"></div>
-        </label>
-      </div>
-      <div class="toggle-row">
-        <span class="toggle-label">
-          <span class="swatch" style="background:#d97706"></span>
-          Bottlenecks
-        </span>
-        <label class="toggle">
-          <input type="checkbox" id="tog-bottleneck" checked>
-          <div class="toggle-track"></div>
-        </label>
+        <button class="btn-small" id="btn-variant-clear">Clear variant filter</button>
       </div>
     </div>
 
-    <div class="panel-section" data-scope="community-detail">
+    <div class="panel-section" data-scope="po variant">
+      <div class="panel-section-title">Edge Types</div>
+      <div class="toggle-row">
+        <span class="toggle-label"><span class="swatch" style="background:rgba(36,52,73,0.55)"></span>DF - item level</span>
+        <label class="toggle"><input type="checkbox" id="tog-dfitem" checked><div class="toggle-track"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label"><span class="swatch" style="background:#2563eb"></span>DF - PO level</span>
+        <label class="toggle"><input type="checkbox" id="tog-dfpo"><div class="toggle-track"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label"><span class="swatch" style="background:rgba(36,52,73,0.22)"></span>CORR edges</span>
+        <label class="toggle"><input type="checkbox" id="tog-corr"><div class="toggle-track"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label"><span class="swatch" style="background:rgba(37,99,235,0.45);border:1px solid rgba(255,255,255,0.9)"></span>Sync events</span>
+        <label class="toggle"><input type="checkbox" id="tog-sync" checked><div class="toggle-track"></div></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label"><span class="swatch" style="background:#d97706"></span>Bottlenecks</span>
+        <label class="toggle"><input type="checkbox" id="tog-bottleneck" checked><div class="toggle-track"></div></label>
+      </div>
+    </div>
+
+    <div class="panel-section" data-scope="po variant">
       <div class="panel-section-title">Context Layers</div>
       <div class="toggle-row">
-        <span class="toggle-label">
-          <span class="swatch" style="background:rgba(15,118,110,0.5)"></span>
-          Resources
-        </span>
-        <label class="toggle">
-          <input type="checkbox" id="tog-resources">
-          <div class="toggle-track"></div>
-        </label>
+        <span class="toggle-label"><span class="swatch" style="background:rgba(15,118,110,0.5)"></span>Resources</span>
+        <label class="toggle"><input type="checkbox" id="tog-resource-overlay"><div class="toggle-track"></div></label>
       </div>
       <div class="toggle-row">
-        <span class="toggle-label">
-          <span class="swatch" style="background:rgba(217,119,6,0.5)"></span>
-          Attributes
-        </span>
-        <label class="toggle">
-          <input type="checkbox" id="tog-attributes">
-          <div class="toggle-track"></div>
-        </label>
+        <span class="toggle-label"><span class="swatch" style="background:rgba(217,119,6,0.5)"></span>Attributes</span>
+        <label class="toggle"><input type="checkbox" id="tog-attribute-overlay"><div class="toggle-track"></div></label>
       </div>
     </div>
 
-    <div class="panel-section" data-scope="po">
-      <div class="panel-section-title">Edge opacity</div>
-      <div class="slider-row">
-        <span class="slider-label">DF (item)</span>
-        <input type="range" id="sl-dfitem" min="0.05" max="1" step="0.05" value="0.7">
-        <span class="slider-val" id="sl-dfitem-val">0.7</span>
-      </div>
-      <div class="slider-row">
-        <span class="slider-label">DF (PO)</span>
-        <input type="range" id="sl-dfpo" min="0.05" max="1" step="0.05" value="0.2">
-        <span class="slider-val" id="sl-dfpo-val">0.2</span>
-      </div>
-      <div class="slider-row">
-        <span class="slider-label">CORR</span>
-        <input type="range" id="sl-corr" min="0.05" max="1" step="0.05" value="0.2">
-        <span class="slider-val" id="sl-corr-val">0.2</span>
-      </div>
+    <div class="panel-section" data-scope="po variant">
+      <div class="panel-section-title">Edge Opacity</div>
+      <div class="slider-row"><span class="slider-label">DF (item)</span><input type="range" id="sl-dfitem" min="0.05" max="1" step="0.05" value="0.7"><span class="slider-val" id="sl-dfitem-val">0.7</span></div>
+      <div class="slider-row"><span class="slider-label">DF (PO)</span><input type="range" id="sl-dfpo" min="0.05" max="1" step="0.05" value="0.2"><span class="slider-val" id="sl-dfpo-val">0.2</span></div>
+      <div class="slider-row"><span class="slider-label">CORR</span><input type="range" id="sl-corr" min="0.05" max="1" step="0.05" value="0.2"><span class="slider-val" id="sl-corr-val">0.2</span></div>
     </div>
 
-    <div class="panel-section" data-scope="po">
-      <div class="panel-section-title">POItem limit</div>
-      <div class="slider-row">
-        <span class="slider-label">Max items shown</span>
-        <input type="range" id="sl-maxitems" min="0" max="20" step="1" value="0">
-        <span class="slider-val" id="sl-maxitems-val">all</span>
-      </div>
+    <div class="panel-section" data-scope="po variant">
+      <div class="panel-section-title">POItem Limit</div>
+      <div class="slider-row"><span class="slider-label">Max items shown</span><input type="range" id="sl-maxitems" min="0" max="20" step="1" value="0"><span class="slider-val" id="sl-maxitems-val">all</span></div>
       <div class="btn-row" style="margin-top:8px;margin-bottom:0">
         <button class="btn-small" id="btn-deviants-only">Show deviants only</button>
+        <button class="btn-small" id="btn-sync-only">Sync events only</button>
       </div>
-      <div id="maxitems-hint" style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.5">
-        Limits items to avoid visual overload. 0 = show all.
-      </div>
+      <div id="maxitems-hint" style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.5">Limits items to avoid visual overload. 0 = show all.</div>
     </div>
 
-    <div class="panel-section" data-scope="community community-detail">
-      <div class="panel-section-title">Community Filters</div>
-      <div class="slider-row" style="margin-top:10px">
-        <span class="slider-label">Min similarity</span>
-        <input type="range" id="sl-overview-weight" min="0.2" max="0.8" step="0.05" value="0.35">
-        <span class="slider-val" id="sl-overview-weight-val">0.35</span>
-      </div>
-    </div>
-
-    <div class="panel-section panel-section-scrollable" data-scope="community community-detail po">
+    <div class="panel-section panel-section-scrollable" data-scope="overview po variant">
       <div class="panel-section-title">Activities</div>
-      <div class="encoding-hint">
-        Event fill = activity<br>
-        Event border = resource
-      </div>
-      <div class="btn-row">
-        <button class="btn-small" id="btn-act-all">All</button>
-        <button class="btn-small" id="btn-act-none">None</button>
-      </div>
+      <div class="encoding-hint">Event fill = activity<br>Event border = resource</div>
+      <div class="btn-row"><button class="btn-small" id="btn-act-all">All</button><button class="btn-small" id="btn-act-none">None</button></div>
       <div class="activity-list" id="activity-list"></div>
     </div>
 
     <div id="stats">
-      <div class="stat-row"><span id="stat-scope-label">Scope</span><span id="stat-scope">-</span></div>
-      <div class="stat-row"><span id="stat-events-label">Events shown</span><span id="stat-events">-</span></div>
-      <div class="stat-row"><span id="stat-items-label">POItems shown</span><span id="stat-items">-</span></div>
-      <div class="stat-row"><span id="stat-dfitem-label">DF edges (item)</span><span id="stat-dfitem">-</span></div>
-      <div class="stat-row"><span id="stat-dfpo-label">DF edges (PO)</span><span id="stat-dfpo">-</span></div>
+      <div class="stat-row"><span id="stat-scope-label">Variants shown</span><span id="stat-scope">-</span></div>
+      <div class="stat-row"><span id="stat-events-label">Instances shown</span><span id="stat-events">-</span></div>
+      <div class="stat-row"><span id="stat-items-label">Total instances</span><span id="stat-items">-</span></div>
+      <div class="stat-row"><span id="stat-dfitem-label">Dominant share</span><span id="stat-dfitem">-</span></div>
+      <div class="stat-row"><span id="stat-dfpo-label">Activities</span><span id="stat-dfpo">-</span></div>
     </div>
-    <div class="panel-section" id="pattern-panel" data-scope="po">
+
+    <div class="panel-section" id="pattern-panel" data-scope="po variant">
       <div class="panel-section-title">Dominant Pattern</div>
-      <div id="pattern-summary" class="community-summary" style="margin-bottom:0">
-        Dominant lifecycle pattern appears here after the layout is drawn.
-      </div>
+      <div id="pattern-summary" class="community-summary" style="margin-bottom:0">Dominant lifecycle pattern appears here after the layout is drawn.</div>
     </div>
   </div>
 
   <div id="canvas-wrap">
     <svg id="canvas"></svg>
+    <div id="html-view" class="hidden"></div>
 
     <div id="dropzone">
       <div class="drop-card">
@@ -226,16 +242,21 @@
 
 <div id="statusbar">
   <span class="status-item">View: <b id="sb-view">-</b></span>
-  <span class="status-item">PO: <b id="sb-po">-</b></span>
+  <span class="status-divider">&middot;</span>
+  <span class="status-item">Scope: <b id="sb-po">-</b></span>
+  <span class="status-divider">&middot;</span>
   <span class="status-item">Items: <b id="sb-items">-</b></span>
+  <span class="status-divider">&middot;</span>
   <span class="status-item">Events: <b id="sb-events">-</b></span>
-  <span class="status-hint">Fill = activity · Border = resource · Scroll or +/- zoom · Drag or arrows pan · F fit · 0 reset</span>
+  <span class="status-divider">&middot;</span>
+  <span class="status-hint">Fill = activity &middot; Border = resource &middot; Scroll or +/- zoom &middot; Drag or arrows pan &middot; F fit &middot; 0 reset</span>
+</div>
 </div>
 
 <script type="module">
 import {
-  buildStore, getStore, getGraph, getOverviewGraph, getActivityCountsForPo,
-  loadFromServer, loadFromFiles,
+  buildStore, getStore, getGraph, getVariantOverview, getActivityDfGraph, getVariantFocusData, getActivityCountsForPo,
+  loadFromServer, loadFromFiles, loadFromXesFile,
 } from "./filters.js";
 
 import {
@@ -250,17 +271,25 @@ const CLUTTER_ITEM_THRESHOLD = 8;
 const CLUTTER_EVENT_THRESHOLD = 120;
 
 const state = {
+  screen: "home",
+  workspaceView: "hub",
   viewMode: "overview",
   selectedPo: null,
-  focusedCommunity: null,
+  selectedVariant: null,
   activities: null,
-  resource: null,
   maxItems: 0,
   showDeviantsOnly: false,
-  overviewMinEdgeWeight: 0.35,
+  showSyncOnly: false,
+  syncVisibilityBeforeFilter: true,
+  datasetLabel: null,
+  datasetSource: null,
   expandedItems: new Set(),
   fitNextDraw: true,
 };
+const landingEl = document.getElementById("landing-screen");
+const workspaceEl = document.getElementById("workspace-shell");
+const canvasEl = document.getElementById("canvas");
+const htmlView = document.getElementById("html-view");
 
 renderInit(
   "canvas",
@@ -268,20 +297,72 @@ renderInit(
   hideTooltip,
   onItemExpand,
   onPoSelect,
-  onCommunitySelect,
+  onVariantSelect,
 );
+
+function isVariantFocusMode() {
+  return state.viewMode === "focus" && state.selectedVariant?.length > 0;
+}
+
+function isSyncScreen() {
+  return state.screen === "workspace" && state.workspaceView === "sync";
+}
+
+function isSyncOnlyMode() {
+  return isSyncScreen() || (state.viewMode === "focus" && state.showSyncOnly);
+}
+
+function isHtmlSurfaceMode() {
+  return state.screen === "workspace" && ["hub", "variants", "relations", "cohort"].includes(state.workspaceView);
+}
+
+function isCanvasWorkspaceView() {
+  return state.screen === "workspace" && ["detail", "sync"].includes(state.workspaceView);
+}
+
+function getCanvasFitOptions() {
+  return isVariantFocusMode()
+    ? {
+        padX: 12,
+        padY: 12,
+        preferWidth: true,
+        alignTop: true,
+        lockMinScale: true,
+      }
+    : {};
+}
+
+function setSurfaceMode(mode) {
+  const showHtml = mode !== "canvas";
+  canvasEl.classList.toggle("hidden-surface", showHtml);
+  htmlView.classList.toggle("hidden", !showHtml);
+  htmlView.dataset.mode = showHtml ? mode : "";
+  if (!showHtml) htmlView.innerHTML = "";
+  hideTooltip();
+}
+
+function setAppScreen(screen) {
+  state.screen = screen;
+  landingEl.classList.toggle("hidden", screen !== "home");
+  workspaceEl.classList.toggle("hidden", screen !== "workspace");
+  hideTooltip();
+}
 
 tryLoad();
 
 async function tryLoad() {
+  setAppScreen("home");
   showLoading(true);
   const serverSources = await loadFromServer("../output");
   if (serverSources) {
     buildStore(serverSources);
-    onDataLoaded();
-  } else {
-    showDropzone(true);
+    onDataLoaded({
+      datasetLabel: "Local output dataset",
+      datasetSource: "server",
+      enterWorkspace: false,
+    });
   }
+  refreshLandingState();
   showLoading(false);
 }
 
@@ -289,37 +370,35 @@ function openFilePicker() {
   document.getElementById("file-input").click();
 }
 
-document.getElementById("btn-load-files").addEventListener("click", openFilePicker);
-document.getElementById("btn-drop-load").addEventListener("click", openFilePicker);
+function openXesPicker() {
+  document.getElementById("xes-input").click();
+}
 
-document.getElementById("file-input").addEventListener("change", async event => {
-  if (!event.target.files.length) return;
-  showLoading(true);
-  try {
-    const sources = await loadFromFiles(event.target.files);
-    buildStore(sources);
-    onDataLoaded();
-  } catch (err) {
-    alert(`Error loading files: ${err.message}\n\nMake sure you selected all of: events.csv, entities.csv, corr.csv, df.csv`);
-  }
-  showLoading(false);
-});
-
-function onDataLoaded() {
+function onDataLoaded(options = {}) {
   showDropzone(false);
   const store = getStore();
   buildPoList(store.poList);
   state.selectedPo = store.poList[0]?.id ?? null;
+  state.selectedVariant = null;
+  state.workspaceView = "hub";
   state.viewMode = "overview";
-  state.focusedCommunity = null;
   state.activities = null;
   state.showDeviantsOnly = false;
+  state.showSyncOnly = false;
+  state.syncVisibilityBeforeFilter = true;
+  state.datasetLabel = options.datasetLabel ?? "Imported dataset";
+  state.datasetSource = options.datasetSource ?? "upload";
   state.expandedItems = new Set();
   state.fitNextDraw = true;
   updatePoSelection();
   updateModeUi();
   buildActivityFilter();
-  redraw();
+  refreshLandingState();
+  if (options.enterWorkspace ?? true) {
+    enterWorkspace(options.initialView ?? "hub");
+  } else {
+    redraw();
+  }
 }
 
 function buildPoList(poList) {
@@ -338,6 +417,133 @@ function buildPoList(poList) {
   });
 }
 
+function refreshLandingState() {
+  const statusEl = document.getElementById("landing-data-status");
+  const openBtn = document.getElementById("btn-home-open-workspace");
+  const storeReady = hasDataLoaded();
+  openBtn.disabled = !storeReady;
+  document.querySelectorAll("#landing-screen [data-open-view]").forEach(button => {
+    const requiresVariant = button.dataset.openView === "cohort";
+    button.disabled = !storeReady || (requiresVariant && !state.selectedVariant?.length);
+  });
+
+  if (!storeReady) {
+    statusEl.textContent = "No dataset loaded yet. Import an XES log or a processed CSV bundle to continue.";
+    return;
+  }
+
+  const store = getStore();
+  const itemCount = store.poList.reduce((sum, po) => sum + po.itemCount, 0);
+  statusEl.innerHTML = `
+    <b>${_escapeHtml(state.datasetLabel ?? "Dataset ready")}</b>
+    · ${store.poList.length} POs
+    · ${itemCount} instances
+    · ${store.events.length} events
+    · ${store.allActivities.length} activities
+  `;
+}
+
+function enterWorkspace(view = "hub") {
+  if (!hasDataLoaded()) return;
+  setAppScreen("workspace");
+  setWorkspaceView(view);
+}
+
+function setWorkspaceView(view, options = {}) {
+  if (!hasDataLoaded()) return;
+  const previousView = state.workspaceView;
+  const syncToggle = document.getElementById("tog-sync");
+  if (view === "sync" && syncToggle) {
+    state.syncVisibilityBeforeFilter = syncToggle.checked;
+  }
+  state.workspaceView = view;
+
+  if (view === "detail" || view === "sync" || view === "cohort") {
+    state.viewMode = "focus";
+    if (!state.selectedPo && !state.selectedVariant?.length) {
+      state.selectedPo = getStore().poList[0]?.id ?? null;
+    }
+  } else {
+    state.viewMode = "overview";
+  }
+
+  if (view === "cohort" && !state.selectedVariant?.length) {
+    state.viewMode = "overview";
+  }
+
+  if (options.fit !== false) {
+    state.fitNextDraw = true;
+  }
+
+  if (previousView === "sync" && view !== "sync" && !state.showSyncOnly && syncToggle) {
+    syncToggle.checked = state.syncVisibilityBeforeFilter;
+    setVisibility("sync", syncToggle.checked);
+  }
+
+  updatePoSelection();
+  updateModeUi();
+  buildActivityFilter();
+  redraw();
+}
+
+function goHome() {
+  setAppScreen("home");
+  refreshLandingState();
+}
+
+document.getElementById("btn-load-files").addEventListener("click", openFilePicker);
+document.getElementById("btn-load-xes").addEventListener("click", openXesPicker);
+document.getElementById("btn-drop-load").addEventListener("click", openFilePicker);
+document.getElementById("btn-home-load-csv").addEventListener("click", openFilePicker);
+document.getElementById("btn-home-load-xes").addEventListener("click", openXesPicker);
+document.getElementById("btn-home-open-workspace").addEventListener("click", () => enterWorkspace("hub"));
+document.getElementById("btn-home").addEventListener("click", goHome);
+document.querySelectorAll("#landing-screen [data-open-view]").forEach(button => {
+  button.addEventListener("click", () => {
+    if (button.disabled) return;
+    enterWorkspace(button.dataset.openView);
+  });
+});
+
+document.getElementById("file-input").addEventListener("change", async event => {
+  if (!event.target.files.length) return;
+  showLoading(true);
+  try {
+    const sources = await loadFromFiles(event.target.files);
+    buildStore(sources);
+    onDataLoaded({
+      datasetLabel: `CSV bundle · ${event.target.files.length} files`,
+      datasetSource: "csv",
+      enterWorkspace: true,
+    });
+  } catch (err) {
+    alert(`Error loading files: ${err.message}\n\nMake sure you selected all of: events.csv, entities.csv, corr.csv, df.csv`);
+  }
+  event.target.value = "";
+  refreshLandingState();
+  showLoading(false);
+});
+
+document.getElementById("xes-input").addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  showLoading(true);
+  try {
+    const sources = await loadFromXesFile(file);
+    buildStore(sources);
+    onDataLoaded({
+      datasetLabel: `XES import · ${file.name}`,
+      datasetSource: "xes",
+      enterWorkspace: true,
+    });
+  } catch (err) {
+    alert(`Error loading XES file: ${err.message}`);
+  }
+  event.target.value = "";
+  refreshLandingState();
+  showLoading(false);
+});
+
 document.getElementById("po-search").addEventListener("input", function() {
   const q = this.value.toLowerCase();
   document.querySelectorAll(".po-item").forEach(el => {
@@ -345,21 +551,47 @@ document.getElementById("po-search").addEventListener("input", function() {
   });
 });
 
+document.getElementById("btn-hub").addEventListener("click", () => enterWorkspace("hub"));
 document.getElementById("btn-overview").addEventListener("click", showOverview);
+document.getElementById("btn-relations-view").addEventListener("click", () => enterWorkspace("relations"));
+document.getElementById("btn-cohort-view").addEventListener("click", () => enterWorkspace("cohort"));
+document.getElementById("btn-sync-view").addEventListener("click", () => enterWorkspace("sync"));
 document.getElementById("btn-focus").addEventListener("click", () => {
-  if (state.selectedPo) focusPo(state.selectedPo, { resetFilters: false });
+  enterWorkspace("detail");
 });
-document.getElementById("btn-community-clear").addEventListener("click", clearCommunityFocus);
+document.getElementById("btn-variant-clear").addEventListener("click", clearVariantFilter);
 
 function focusPo(poId, options = {}) {
   if (!poId) return;
   const resetFilters = options.resetFilters ?? true;
+  const clearVariant = options.clearVariant ?? true;
+  const workspaceView = options.workspaceView ?? "detail";
   const changingPo = state.selectedPo !== poId;
   state.selectedPo = poId;
+  state.workspaceView = workspaceView;
   state.viewMode = "focus";
   state.expandedItems = new Set();
   state.fitNextDraw = true;
+  if (clearVariant) state.selectedVariant = null;
   if (resetFilters && changingPo) state.activities = null;
+  refreshLandingState();
+  setAppScreen("workspace");
+  updatePoSelection();
+  updateModeUi();
+  buildActivityFilter();
+  redraw();
+}
+
+function focusSelectedVariant(instanceIds) {
+  if (!instanceIds?.length) return;
+  state.selectedVariant = [...instanceIds];
+  state.selectedPo = _firstVariantPoId(instanceIds) ?? state.selectedPo;
+  state.workspaceView = "detail";
+  state.viewMode = "focus";
+  state.expandedItems = new Set();
+  state.fitNextDraw = true;
+  refreshLandingState();
+  setAppScreen("workspace");
   updatePoSelection();
   updateModeUi();
   buildActivityFilter();
@@ -368,33 +600,33 @@ function focusPo(poId, options = {}) {
 
 function showOverview() {
   if (!hasDataLoaded()) return;
+  state.workspaceView = "variants";
   state.viewMode = "overview";
   state.expandedItems = new Set();
   state.fitNextDraw = true;
+  setAppScreen("workspace");
   updateModeUi();
   buildActivityFilter();
   redraw();
 }
 
 function onPoSelect(poId) {
-  focusPo(poId);
+  focusPo(poId, { workspaceView: isSyncScreen() ? "sync" : "detail" });
 }
 
-function onCommunitySelect(communityId) {
-  if (!communityId) return;
+function onVariantSelect(instanceIds) {
+  focusSelectedVariant(instanceIds);
+}
+
+function clearVariantFilter() {
+  if (!state.selectedVariant?.length) return;
+  state.selectedVariant = null;
   state.viewMode = "overview";
-  state.focusedCommunity = communityId;
+  state.workspaceView = "variants";
   state.expandedItems = new Set();
   state.fitNextDraw = true;
-  updateModeUi();
-  buildActivityFilter();
-  redraw();
-}
-
-function clearCommunityFocus() {
-  if (state.focusedCommunity === null) return;
-  state.focusedCommunity = null;
-  state.fitNextDraw = true;
+  refreshLandingState();
+  updatePoSelection();
   updateModeUi();
   buildActivityFilter();
   redraw();
@@ -409,46 +641,110 @@ function updatePoSelection() {
 }
 
 function updateModeUi() {
+  const header = document.getElementById("header");
+  const main = document.getElementById("main");
+  const statusbar = document.getElementById("statusbar");
+  const homeBtn = document.getElementById("btn-home");
+  const hubBtn = document.getElementById("btn-hub");
   const overviewBtn = document.getElementById("btn-overview");
+  const relationsBtn = document.getElementById("btn-relations-view");
+  const cohortBtn = document.getElementById("btn-cohort-view");
+  const syncViewBtn = document.getElementById("btn-sync-view");
   const focusBtn = document.getElementById("btn-focus");
+  const fitBtn = document.getElementById("btn-fit");
+  const resetZoomBtn = document.getElementById("btn-reset-zoom");
+  const dataBadge = document.getElementById("workspace-data-badge");
   const maxItems = document.getElementById("sl-maxitems");
   const maxItemsHint = document.getElementById("maxitems-hint");
   const deviantsBtn = document.getElementById("btn-deviants-only");
-  const clearCommunityBtn = document.getElementById("btn-community-clear");
-  const overviewWeight = document.getElementById("sl-overview-weight");
+  const syncOnlyBtn = document.getElementById("btn-sync-only");
+  const clearVariantBtn = document.getElementById("btn-variant-clear");
+  const syncToggle = document.getElementById("tog-sync");
+  const panel = document.getElementById("panel");
   const inOverview = state.viewMode === "overview";
+  const variantActive = state.selectedVariant?.length > 0;
+  const htmlSurface = isHtmlSurfaceMode();
+  const syncOnlyActive = isSyncOnlyMode();
   const scope = getSidebarScope();
   const panelTag = document.getElementById("panel-view-tag");
+  const canvasMode = isCanvasWorkspaceView();
 
-  overviewBtn.classList.toggle("active", inOverview);
-  focusBtn.classList.toggle("active", !inOverview);
-  focusBtn.disabled = !state.selectedPo;
-  maxItems.disabled = inOverview;
-  deviantsBtn.disabled = inOverview;
-  deviantsBtn.classList.toggle("active", state.showDeviantsOnly && !inOverview);
-  clearCommunityBtn.disabled = !inOverview || !state.focusedCommunity;
-  overviewWeight.disabled = !inOverview;
+  header.classList.toggle("hidden", state.screen !== "workspace");
+  main.classList.toggle("hidden", state.screen !== "workspace");
+  statusbar.classList.toggle("hidden", state.screen !== "workspace");
+  panel.classList.toggle("panel-minimal", htmlSurface);
+  main.classList.toggle("main-html-mode", htmlSurface);
+
+  homeBtn.classList.toggle("active", state.screen === "home");
+  hubBtn.classList.toggle("active", state.workspaceView === "hub");
+  overviewBtn.classList.toggle("active", state.workspaceView === "variants");
+  relationsBtn.classList.toggle("active", state.workspaceView === "relations");
+  cohortBtn.classList.toggle("active", state.workspaceView === "cohort");
+  syncViewBtn.classList.toggle("active", state.workspaceView === "sync");
+  focusBtn.classList.toggle("active", state.workspaceView === "detail");
+
+  hubBtn.disabled = !hasDataLoaded();
+  overviewBtn.disabled = !hasDataLoaded();
+  relationsBtn.disabled = !hasDataLoaded();
+  cohortBtn.disabled = !variantActive;
+  syncViewBtn.disabled = !hasDataLoaded() || (!state.selectedPo && !variantActive);
+  focusBtn.disabled = !hasDataLoaded() || (!state.selectedPo && !variantActive);
+  fitBtn.disabled = !canvasMode;
+  resetZoomBtn.disabled = !canvasMode;
+  maxItems.disabled = !canvasMode || variantActive || isSyncScreen();
+  deviantsBtn.disabled = !canvasMode || variantActive || isSyncScreen();
+  syncOnlyBtn.disabled = !canvasMode || isSyncScreen();
+  deviantsBtn.classList.toggle("active", state.showDeviantsOnly && !inOverview && !variantActive);
+  syncOnlyBtn.classList.toggle("active", syncOnlyActive && !isSyncScreen());
+  clearVariantBtn.disabled = !variantActive;
+  syncToggle.disabled = syncOnlyActive;
+  if (syncOnlyActive && !syncToggle.checked) {
+    syncToggle.checked = true;
+    setVisibility("sync", true);
+  }
+
+  dataBadge.textContent = hasDataLoaded()
+    ? `${state.datasetSource === "xes" ? "XES" : state.datasetSource === "csv" ? "CSV" : "Local"} · ${state.datasetLabel ?? "Dataset ready"}`
+    : "No dataset";
+
   document.querySelectorAll("#panel [data-scope]").forEach(section => {
     const scopes = (section.dataset.scope ?? "").split(/\s+/).filter(Boolean);
     section.classList.toggle("hidden-by-scope", !scopes.includes(scope));
   });
-  panelTag.textContent = scope === "po"
-    ? "PO Detail"
-    : scope === "community-detail"
-      ? "Community Detail"
-      : "Community Overview";
-  maxItemsHint.textContent = inOverview
-    ? (state.focusedCommunity
-        ? "Focused community view: resources and attributes appear on demand, and case links stay local."
-        : "Overview first: start with communities, then click one to reveal its cases, resources, and attributes.")
-    : (state.showDeviantsOnly
-        ? "Deviants-only mode is active: all non-dominant POItems are shown side by side."
-        : "Limits items to avoid visual overload. 0 = show all.");
+
+  panelTag.textContent = {
+    hub: "Workspace Guide",
+    variants: "Variant Overview",
+    relations: "Activity Relations",
+    cohort: "Variant Cohort",
+    sync: "Synchronization Lens",
+    detail: variantActive ? "Variant Focus" : "PO Detail",
+  }[state.workspaceView] ?? "Workspace";
+
+  maxItemsHint.textContent = state.workspaceView === "hub"
+    ? "Use the hub to choose the view that best supports T1–T4."
+    : state.workspaceView === "relations"
+    ? "Activity Relations emphasizes T4 by separating the transition matrix from the variant ranking."
+    : state.workspaceView === "cohort"
+    ? "Variant Cohort compares the currently selected lifecycle variant across purchase orders."
+    : state.workspaceView === "variants"
+    ? "Variants are grouped by complete activity sequence. Click a row to focus matching instances."
+    : isSyncScreen()
+    ? "Synchronization Lens fixes the scope on shared events and the participating POItems."
+    : (syncOnlyActive
+        ? "Sync-only mode is active: only POItems that participate in shared events remain expanded in the canvas."
+        : (variantActive
+        ? "Variant filter is active: all matching instances are shown without truncation."
+        : state.showDeviantsOnly
+          ? "Deviants-only mode is active: all non-dominant POItems are shown side by side."
+          : "Limits items to avoid visual overload. 0 = show all."));
 }
 
 function getSidebarScope() {
-  if (state.viewMode === "focus") return "po";
-  return state.focusedCommunity ? "community-detail" : "community";
+  if (["hub", "variants", "relations"].includes(state.workspaceView)) return "overview";
+  if (state.workspaceView === "cohort") return "variant";
+  if (isVariantFocusMode()) return "variant";
+  return "po";
 }
 
 function buildActivityFilter() {
@@ -477,19 +773,18 @@ function buildActivityFilter() {
 }
 
 function getCurrentActivityCounts() {
-  if (state.viewMode === "focus" && state.selectedPo) {
-    return getActivityCountsForPo(state.selectedPo);
-  }
-  if (state.viewMode === "overview" && state.focusedCommunity) {
+  if (state.viewMode === "focus" && state.selectedVariant?.length) {
     const counts = {};
     const store = getStore();
-    store.poList.forEach(po => {
-      if (store.communityByPoId?.[po.id]?.id !== state.focusedCommunity) return;
-      (store.eventsByPo[po.id] ?? []).forEach(event => {
+    state.selectedVariant.forEach(itemId => {
+      (store.eventsByItem[itemId] ?? []).forEach(event => {
         counts[event.activity] = (counts[event.activity] ?? 0) + 1;
       });
     });
     return counts;
+  }
+  if (state.viewMode === "focus" && state.selectedPo) {
+    return getActivityCountsForPo(state.selectedPo);
   }
   const counts = {};
   getStore().events.forEach(event => {
@@ -544,10 +839,10 @@ document.getElementById("tog-dfpo").addEventListener("change", function() {
 document.getElementById("tog-corr").addEventListener("change", function() {
   setVisibility("corr", this.checked);
 });
-document.getElementById("tog-resources").addEventListener("change", function() {
+document.getElementById("tog-resource-overlay").addEventListener("change", function() {
   setVisibility("resources", this.checked);
 });
-document.getElementById("tog-attributes").addEventListener("change", function() {
+document.getElementById("tog-attribute-overlay").addEventListener("change", function() {
   setVisibility("attributes", this.checked);
 });
 document.getElementById("tog-sync").addEventListener("change", function() {
@@ -577,16 +872,26 @@ document.getElementById("sl-maxitems").addEventListener("input", function() {
 });
 
 document.getElementById("btn-deviants-only").addEventListener("click", function() {
+  if (state.selectedVariant?.length) return;
   state.showDeviantsOnly = !state.showDeviantsOnly;
   this.classList.toggle("active", state.showDeviantsOnly);
   redraw();
 });
 
-document.getElementById("sl-overview-weight").addEventListener("input", function() {
-  const value = parseFloat(this.value);
-  document.getElementById("sl-overview-weight-val").textContent = value.toFixed(2);
-  state.overviewMinEdgeWeight = value;
-  if (state.viewMode === "overview") redraw();
+document.getElementById("btn-sync-only").addEventListener("click", function() {
+  const syncToggle = document.getElementById("tog-sync");
+  if (!state.showSyncOnly) {
+    state.syncVisibilityBeforeFilter = syncToggle.checked;
+    syncToggle.checked = true;
+    setVisibility("sync", true);
+  } else {
+    syncToggle.checked = state.syncVisibilityBeforeFilter;
+    setVisibility("sync", syncToggle.checked);
+  }
+  state.showSyncOnly = !state.showSyncOnly;
+  state.fitNextDraw = true;
+  updateModeUi();
+  redraw();
 });
 
 document.getElementById("btn-fit").addEventListener("click", fitCurrentView);
@@ -636,6 +941,7 @@ window.addEventListener("keydown", event => {
 });
 
 function autoClutterGuard(graph) {
+  if (!graph) return;
   const tooManyItems = graph.items.length > CLUTTER_ITEM_THRESHOLD;
   const tooManyEvents = graph.events.length > CLUTTER_EVENT_THRESHOLD;
 
@@ -661,60 +967,71 @@ function clearStatusWarning() {
   if (_warnEl) _warnEl.textContent = "";
 }
 
-function updateCommunityPanel(graph) {
-  const summaryEl = document.getElementById("community-summary");
-  const listEl = document.getElementById("community-list");
-
-  if (state.viewMode !== "overview" || !graph) {
-    summaryEl.textContent = "Community overview is available in overview mode.";
-    listEl.innerHTML = "";
-    return;
-  }
-
-  const clusters = graph.clusters ?? [];
-  listEl.innerHTML = "";
-  clusters.forEach(cluster => {
-    const el = document.createElement("button");
-    el.type = "button";
-    el.className = `community-item${cluster.id === state.focusedCommunity ? " active" : ""}`;
-    el.innerHTML = `
-      <span class="community-item-title">${_escapeHtml(cluster.label)}</span>
-      <span class="community-item-meta">${cluster.count} cases</span>
-    `;
-    el.addEventListener("click", () => onCommunitySelect(cluster.id));
-    listEl.appendChild(el);
-  });
-
-  if (!state.focusedCommunity) {
+function updateVariantSummary(graph, variantFocusData = null) {
+  const summaryEl = document.getElementById("variant-summary");
+  if (!summaryEl) return;
+  if (variantFocusData) {
     summaryEl.innerHTML = `
-      <div><b>${clusters.length}</b> communities visible</div>
-      <div style="margin-top:4px">Start from the aggregate map, then click a community to reveal its cases and context.</div>
+      <div><b>${variantFocusData.totalInstances}</b> matching instances across <b>${variantFocusData.poCount}</b> ${variantFocusData.poCount === 1 ? "PO" : "POs"}</div>
+      <div style="margin-top:4px">${state.workspaceView === "cohort"
+        ? "Variant Cohort compares the matching purchase orders side by side while keeping the swim-lane canvas available as a separate screen."
+        : isSyncOnlyMode()
+        ? "Sync-only mode is active: only shared events and their participating POItems remain visible in the canvas."
+        : "The canvas shows all matching instances directly in the swim-lane view."}</div>
+      <div class="community-chip-group">
+        ${(variantFocusData.sequence ?? []).map(activity => `<span class="community-chip">${_escapeHtml(activity)}</span>`).join("")}
+      </div>
     `;
     return;
   }
+  if (state.viewMode !== "overview" || !graph) {
+    summaryEl.textContent = "Click a variant row in the overview to focus matching instances in the swim-lane view.";
+    return;
+  }
 
-  const active = clusters.find(cluster => cluster.id === state.focusedCommunity) ?? clusters[0];
-  if (!active) {
-    summaryEl.textContent = "No community matches the current filters.";
+  const dominant = graph.variants?.[0];
+  if (!dominant) {
+    summaryEl.textContent = "No variants match the current activity filter.";
     return;
   }
 
   summaryEl.innerHTML = `
-    <div><b>${_escapeHtml(active.label)}</b>${active.code ? ` <span style="color:var(--text-dim)">(${_escapeHtml(active.code)})</span>` : ""}</div>
-    <div style="margin-top:4px">${active.count} cases • ${active.hint || "focused community"}</div>
+    <div><b>${graph.variants?.length ?? 0}</b> shown of <b>${graph.variantCount ?? 0}</b> distinct variants</div>
+    <div style="margin-top:4px">${graph.totalInstances ?? 0} total instances · dominant share ${Math.round((dominant.frequency ?? 0) * 100)}%</div>
     <div class="community-chip-group">
-      ${(active.resources ?? []).slice(0, 8).map(item => `<span class="community-chip resource">${_escapeHtml(item.shortLabel)} (${item.count})</span>`).join("") || '<span class="community-chip empty">No resources</span>'}
-    </div>
-    <div class="community-chip-group">
-      ${(active.attributes ?? []).slice(0, 8).map(item => `<span class="community-chip attribute">${_escapeHtml(item.shortLabel)} (${item.count})</span>`).join("") || '<span class="community-chip empty">No attributes</span>'}
+      ${(dominant.sequence ?? []).map(activity => `<span class="community-chip">${_escapeHtml(activity)}</span>`).join("")}
     </div>
   `;
 }
 
-function updatePoSummary() {
+function updatePoSummary(variantFocusData = null) {
   const summaryEl = document.getElementById("po-summary");
   if (!summaryEl) return;
-  if (state.viewMode !== "focus" || !state.selectedPo) {
+  if (state.viewMode !== "focus") {
+    summaryEl.textContent = "Select a PO to inspect its details, items, and event structure.";
+    return;
+  }
+
+  if (isVariantFocusMode()) {
+    if (!variantFocusData?.totalInstances) {
+      summaryEl.textContent = "No matching instances remain under the current activity filter.";
+      return;
+    }
+    const medianCycleMs = _medianValue((variantFocusData.pos ?? []).map(po => po.medianCycleMs));
+    summaryEl.innerHTML = `
+      <div><b>${state.workspaceView === "cohort" ? "Variant cohort" : "Variant focus"}</b></div>
+      <div style="margin-top:4px">${variantFocusData.totalInstances} instances across ${variantFocusData.poCount} ${variantFocusData.poCount === 1 ? "PO" : "POs"}</div>
+      <div style="margin-top:4px">Median cycle time ${_formatDurationShort(medianCycleMs)} · span ${_formatDateSpan(variantFocusData.firstDate, variantFocusData.lastDate)}</div>
+      ${state.workspaceView === "cohort" ? `<div style="margin-top:4px">Use this screen for T2 comparison, then return to Swim-Lane Detail for event-level reading.</div>` : ""}
+      ${isSyncOnlyMode() ? `<div style="margin-top:4px">Only synchronized POItems and shared events remain expanded for T3 analysis.</div>` : ""}
+      <div class="community-chip-group">
+        ${(variantFocusData.sequence ?? []).map(activity => `<span class="community-chip">${_escapeHtml(activity)}</span>`).join("")}
+      </div>
+    `;
+    return;
+  }
+
+  if (!state.selectedPo) {
     summaryEl.textContent = "Select a PO to inspect its details, items, and event structure.";
     return;
   }
@@ -727,64 +1044,76 @@ function updatePoSummary() {
 
   const attrs = Object.entries(summary.attrs ?? {})
     .map(([key, value]) => `${key}: ${value}`)
-    .join(" • ");
+    .join(" · ");
 
   summaryEl.innerHTML = `
     <div><b>${_escapeHtml(summary.id)}</b></div>
-    <div style="margin-top:4px">${summary.eventCount} events • ${summary.itemCount} items</div>
+    <div style="margin-top:4px">${summary.eventCount} events · ${summary.itemCount} items</div>
     <div style="margin-top:4px">${summary.topResources?.length ? `Resources: ${summary.topResources.map(_escapeHtml).join(", ")}` : "No named resources"}</div>
+    ${isSyncOnlyMode() ? `<div style="margin-top:4px">Sync-only mode isolates the shared events and participating POItems in this purchase order.</div>` : ""}
     ${attrs ? `<div style="margin-top:4px">${_escapeHtml(attrs)}</div>` : ""}
   `;
 }
 
 function redraw() {
-  if (!hasDataLoaded()) return;
+  if (!hasDataLoaded() || state.screen !== "workspace") return;
+  let overviewGraph = null;
+  let variantFocusData = null;
+  let graphs = [];
+  let layout = null;
 
-  const graphs = state.viewMode === "overview"
-    ? [getOverviewGraph({
-        activities: state.activities,
-        communityId: state.focusedCommunity,
-        minEdgeWeight: state.overviewMinEdgeWeight,
-      })]
-    : [getGraph(state.selectedPo, {
-        activities: state.activities,
-        maxItems: state.maxItems,
-      })];
+  if (["hub", "variants", "relations"].includes(state.workspaceView)) {
+    overviewGraph = _buildVariantOverviewGraph();
+    setSurfaceMode(state.workspaceView);
+    if (state.workspaceView === "hub") renderWorkspaceHub(overviewGraph);
+    if (state.workspaceView === "variants") renderVariantLandscapeView(overviewGraph);
+    if (state.workspaceView === "relations") renderActivityRelationsView(overviewGraph);
+    clearStatusWarning();
+  } else if (state.workspaceView === "cohort") {
+    setSurfaceMode("cohort");
+    if (state.selectedVariant?.length) {
+      variantFocusData = _buildVariantFocusViewData();
+      renderVariantFocusDashboard(variantFocusData);
+    } else {
+      renderVariantCohortEmpty();
+    }
+    clearStatusWarning();
+  } else {
+    if (isVariantFocusMode()) {
+      variantFocusData = _buildVariantFocusViewData();
+    }
+    setSurfaceMode("canvas");
+    graphs = _buildFocusGraphs();
+    if (graphs[0] && !isSyncOnlyMode()) autoClutterGuard(graphs[0]);
+    else clearStatusWarning();
 
-  if (state.viewMode === "focus") autoClutterGuard(graphs[0]);
-  else clearStatusWarning();
-
-  const layout = draw(graphs, state.viewMode === "overview" ? new Set() : state.expandedItems, {
-    fit: state.fitNextDraw,
-    minScale: state.viewMode === "overview" ? OVERVIEW_MIN_SCALE : undefined,
-    layoutFilters: {
-      showDeviantsOnly: state.showDeviantsOnly,
-    },
-  });
-  state.fitNextDraw = false;
-  updatePoSummary();
-  updateCommunityPanel(graphs[0]);
-  updateStats(graphs, layout);
-  updateStatusBar(graphs, layout);
-  updatePatternPanel(layout);
-}
-
-function summarizeGraphs(graphs, layout = null) {
-  if (state.viewMode === "overview") {
-    const meta = graphs[0]?.meta ?? {};
-    return {
-      poCount: meta.poCount ?? 0,
-      clusterCount: meta.clusterCount ?? 0,
-      totalEvents: meta.totalEvents ?? 0,
-      filteredEvents: meta.filteredEvents ?? 0,
-      totalItems: meta.totalItems ?? 0,
-      shownItems: meta.shownItems ?? 0,
-      dfItemCount: meta.dfItemCount ?? 0,
-      dfPoCount: meta.dfPoCount ?? 0,
-      overviewEdgeCount: meta.overviewEdgeCount ?? 0,
-    };
+    layout = draw(graphs, state.expandedItems, {
+      fit: state.fitNextDraw,
+      activityColorByName: getStore().activityColorByName,
+      fitOptions: getCanvasFitOptions(),
+      layoutFilters: {
+        showDeviantsOnly: state.showDeviantsOnly,
+        showSyncOnly: isSyncOnlyMode(),
+      },
+    });
+    if (isSyncOnlyMode()) {
+      if ((layout?.summary?.syncEventCount ?? 0) === 0) {
+        setStatusWarning("No sync events remain in the current scope.");
+      } else {
+        clearStatusWarning();
+      }
+    }
   }
 
+  state.fitNextDraw = false;
+  updatePoSummary(variantFocusData);
+  updateVariantSummary(overviewGraph, variantFocusData);
+  updateStats({ overviewGraph, variantFocusData, graphs, layout });
+  updateStatusBar({ overviewGraph, variantFocusData, graphs, layout });
+  updatePatternPanel(layout, variantFocusData);
+}
+
+function summarizeFocusGraphs(graphs, layout = null) {
   if (layout?.summary) {
     return {
       poCount: graphs.length,
@@ -792,10 +1121,10 @@ function summarizeGraphs(graphs, layout = null) {
       filteredEvents: layout.summary.filteredEvents ?? 0,
       totalItems: layout.summary.totalItems ?? 0,
       shownItems: layout.summary.shownItems ?? 0,
+      syncItemCount: layout.summary.syncItemCount ?? 0,
+      syncEventCount: layout.summary.syncEventCount ?? 0,
       dfItemCount: layout.summary.dfItemCount ?? 0,
       dfPoCount: layout.summary.dfPoCount ?? 0,
-      overviewEdgeCount: 0,
-      clusterCount: 0,
     };
   }
 
@@ -814,55 +1143,198 @@ function summarizeGraphs(graphs, layout = null) {
     filteredEvents: 0,
     totalItems: 0,
     shownItems: 0,
+    syncItemCount: 0,
+    syncEventCount: 0,
     dfItemCount: 0,
     dfPoCount: 0,
-    overviewEdgeCount: 0,
-    clusterCount: 0,
   });
 }
 
-function updateStats(graphs, layout = null) {
-  const summary = summarizeGraphs(graphs, layout);
-  document.getElementById("stat-scope-label").textContent = state.viewMode === "overview" ? "POs shown" : "Scope";
-  if (state.viewMode === "overview") {
-    document.getElementById("stat-scope-label").textContent = "Cases shown";
+function updateStats({ overviewGraph = null, variantFocusData = null, graphs = [], layout = null } = {}) {
+  if (overviewGraph) {
+    const summary = {
+      variantShown: overviewGraph.variants?.length ?? 0,
+      variantCount: overviewGraph.variantCount ?? 0,
+      instancesShown: (overviewGraph.variants ?? []).reduce((sum, variant) => sum + variant.count, 0),
+      totalInstances: overviewGraph.totalInstances ?? 0,
+      dominantShare: overviewGraph.variants?.[0]?.frequency ?? 0,
+      activityCount: overviewGraph.dfGraph?.nodes?.length ?? 0,
+    };
+    document.getElementById("stat-scope-label").textContent = "Variants shown";
+    document.getElementById("stat-events-label").textContent = "Instances shown";
+    document.getElementById("stat-items-label").textContent = "Total instances";
+    document.getElementById("stat-dfitem-label").textContent = "Dominant share";
+    document.getElementById("stat-dfpo-label").textContent = "Activities";
+    document.getElementById("stat-scope").textContent = `${summary.variantShown} / ${summary.variantCount}`;
+    document.getElementById("stat-events").textContent = summary.instancesShown;
+    document.getElementById("stat-items").textContent = summary.totalInstances;
+    document.getElementById("stat-dfitem").textContent = `${Math.round(summary.dominantShare * 100)}%`;
+    document.getElementById("stat-dfpo").textContent = summary.activityCount;
+    return;
   }
+
+  if (variantFocusData && !isSyncOnlyMode()) {
+    const totalEvents = (variantFocusData.pos ?? []).reduce((sum, po) => sum + (po.eventCount ?? 0), 0);
+    const medianCycleMs = _medianValue((variantFocusData.pos ?? []).map(po => po.medianCycleMs));
+    document.getElementById("stat-scope-label").textContent = "POs in cohort";
+    document.getElementById("stat-events-label").textContent = "Instances";
+    document.getElementById("stat-items-label").textContent = "Events";
+    document.getElementById("stat-dfitem-label").textContent = "Median cycle";
+    document.getElementById("stat-dfpo-label").textContent = "Activities";
+    document.getElementById("stat-scope").textContent = variantFocusData.poCount;
+    document.getElementById("stat-events").textContent = variantFocusData.totalInstances;
+    document.getElementById("stat-items").textContent = totalEvents;
+    document.getElementById("stat-dfitem").textContent = _formatDurationShort(medianCycleMs);
+    document.getElementById("stat-dfpo").textContent = variantFocusData.sequence?.length ?? 0;
+    return;
+  }
+
+  if (state.workspaceView === "cohort" && !state.selectedVariant?.length) {
+    document.getElementById("stat-scope-label").textContent = "POs in cohort";
+    document.getElementById("stat-events-label").textContent = "Instances";
+    document.getElementById("stat-items-label").textContent = "Events";
+    document.getElementById("stat-dfitem-label").textContent = "Median cycle";
+    document.getElementById("stat-dfpo-label").textContent = "Activities";
+    document.getElementById("stat-scope").textContent = 0;
+    document.getElementById("stat-events").textContent = 0;
+    document.getElementById("stat-items").textContent = 0;
+    document.getElementById("stat-dfitem").textContent = "-";
+    document.getElementById("stat-dfpo").textContent = 0;
+    return;
+  }
+
+  const summary = summarizeFocusGraphs(graphs, layout);
+  if (isSyncOnlyMode()) {
+    const totalScopeItems = variantFocusData?.totalInstances ?? summary.totalItems;
+    document.getElementById("stat-scope-label").textContent = "Scope";
+    document.getElementById("stat-events-label").textContent = "Sync events";
+    document.getElementById("stat-items-label").textContent = "Sync POItems";
+    document.getElementById("stat-dfitem-label").textContent = "DF edges (item)";
+    document.getElementById("stat-dfpo-label").textContent = "DF edges (PO)";
+    document.getElementById("stat-scope").textContent = state.selectedVariant?.length
+      ? `variant (${variantFocusData?.poCount ?? summary.poCount} POs)`
+      : graphs[0]?.po ?? "-";
+    document.getElementById("stat-events").textContent = summary.syncEventCount;
+    document.getElementById("stat-items").textContent = `${summary.syncItemCount} / ${totalScopeItems}`;
+    document.getElementById("stat-dfitem").textContent = summary.dfItemCount;
+    document.getElementById("stat-dfpo").textContent = summary.dfPoCount;
+    return;
+  }
+
+  document.getElementById("stat-scope-label").textContent = "Scope";
   document.getElementById("stat-events-label").textContent = "Events shown";
   document.getElementById("stat-items-label").textContent = "POItems shown";
-  document.getElementById("stat-dfitem-label").textContent = state.viewMode === "overview"
-    ? (state.focusedCommunity ? "Case links" : "Community links")
-    : "DF edges (item)";
-  document.getElementById("stat-dfpo-label").textContent = state.viewMode === "overview" ? "Clusters" : "DF edges (PO)";
-  document.getElementById("stat-scope").textContent = state.viewMode === "overview"
-    ? summary.poCount
+  document.getElementById("stat-dfitem-label").textContent = "DF edges (item)";
+  document.getElementById("stat-dfpo-label").textContent = "DF edges (PO)";
+  document.getElementById("stat-scope").textContent = state.selectedVariant?.length
+    ? `variant (${summary.shownItems})`
     : graphs[0]?.po ?? "-";
   document.getElementById("stat-events").textContent = `${summary.filteredEvents} / ${summary.totalEvents}`;
   document.getElementById("stat-items").textContent = `${summary.shownItems} / ${summary.totalItems}`;
-  document.getElementById("stat-dfitem").textContent = state.viewMode === "overview"
-    ? (state.focusedCommunity ? summary.overviewEdgeCount : (graphs[0]?.meta?.overviewCommunityEdgeCount ?? 0))
-    : summary.dfItemCount;
-  document.getElementById("stat-dfpo").textContent = state.viewMode === "overview"
-    ? summary.clusterCount
-    : summary.dfPoCount;
+  document.getElementById("stat-dfitem").textContent = summary.dfItemCount;
+  document.getElementById("stat-dfpo").textContent = summary.dfPoCount;
 }
 
-function updateStatusBar(graphs, layout = null) {
-  const summary = summarizeGraphs(graphs, layout);
-  document.getElementById("sb-view").textContent = state.viewMode;
-  document.getElementById("sb-po").textContent = state.viewMode === "overview"
-    ? (state.focusedCommunity
-        ? graphs[0]?.clusters?.find(cluster => cluster.id === state.focusedCommunity)?.label ?? `community (${summary.poCount})`
-        : `all (${summary.poCount})`)
+function updateStatusBar({ overviewGraph = null, variantFocusData = null, graphs = [], layout = null } = {}) {
+  const hintEl = document.querySelector("#statusbar .status-hint");
+  document.getElementById("sb-view").textContent = {
+    hub: "workspace hub",
+    variants: "variant landscape",
+    relations: "activity relations",
+    cohort: "variant cohort",
+    sync: "sync lens",
+    detail: "swim-lane detail",
+  }[state.workspaceView] ?? state.viewMode;
+
+  if (overviewGraph) {
+    document.getElementById("sb-po").textContent = `${overviewGraph.variants?.length ?? 0} variants`;
+    document.getElementById("sb-items").textContent = (overviewGraph.variants ?? []).reduce((sum, variant) => sum + variant.count, 0);
+    document.getElementById("sb-events").textContent = overviewGraph.totalInstances ?? 0;
+    if (hintEl) {
+      hintEl.textContent = state.workspaceView === "hub"
+        ? "Choose a task-oriented view card to start the analysis"
+        : state.workspaceView === "relations"
+          ? "Read strong matrix cells as dominant transitions, then return to detail or sync views for context"
+          : "Click a variant row to inspect matching POs · Scroll to browse the dashboard";
+    }
+    return;
+  }
+
+  if (variantFocusData && !isSyncOnlyMode()) {
+    document.getElementById("sb-po").textContent = `${variantFocusData.poCount} POs`;
+    document.getElementById("sb-items").textContent = variantFocusData.totalInstances;
+    document.getElementById("sb-events").textContent = (variantFocusData.pos ?? []).reduce((sum, po) => sum + (po.eventCount ?? 0), 0);
+    if (hintEl) {
+      hintEl.textContent = state.workspaceView === "cohort"
+        ? "Compare matching purchase orders in the cohort table, or switch to Swim-Lane Detail for event-level context"
+        : "Variant filter active · Scroll or +/- zoom · Drag or arrows pan · F fit · 0 reset";
+    }
+    return;
+  }
+
+  if (state.workspaceView === "cohort" && !state.selectedVariant?.length) {
+    document.getElementById("sb-po").textContent = "no variant";
+    document.getElementById("sb-items").textContent = 0;
+    document.getElementById("sb-events").textContent = 0;
+    if (hintEl) hintEl.textContent = "Open Variant Landscape, select a lifecycle row, then return here for cohort comparison";
+    return;
+  }
+
+  const summary = summarizeFocusGraphs(graphs, layout);
+  document.getElementById("sb-po").textContent = isVariantFocusMode()
+    ? `${variantFocusData?.poCount ?? summary.poCount} POs`
     : graphs[0]?.po ?? "-";
-  document.getElementById("sb-items").textContent = summary.shownItems;
-  document.getElementById("sb-events").textContent = summary.filteredEvents;
+  document.getElementById("sb-items").textContent = isSyncOnlyMode() ? summary.syncItemCount : summary.shownItems;
+  document.getElementById("sb-events").textContent = isSyncOnlyMode() ? summary.syncEventCount : summary.filteredEvents;
+  if (hintEl) {
+    hintEl.textContent = isSyncOnlyMode()
+      ? "Sync-only mode active · shared events are isolated in the current scope · Scroll or +/- zoom · Drag or arrows pan · F fit · 0 reset"
+      : "Fill = activity · Border = resource · Scroll or +/- zoom · Drag or arrows pan · F fit · 0 reset";
+  }
 }
 
-function updatePatternPanel(layout) {
+function updatePatternPanel(layout, variantFocusData = null) {
   const panel = document.getElementById("pattern-summary");
   if (!panel) return;
   if (state.viewMode !== "focus") {
     panel.textContent = "Dominant lifecycle pattern is shown in focused PO mode.";
+    return;
+  }
+
+  if (isSyncOnlyMode()) {
+    const summary = summarizeFocusGraphs([], layout);
+    if (!summary.syncEventCount) {
+      panel.innerHTML = `
+        <div><b>Synchronization focus</b></div>
+        <div style="margin-top:4px">No shared events remain under the current activity and scope filters.</div>
+      `;
+      return;
+    }
+
+    panel.innerHTML = `
+      <div><b>Synchronization focus</b></div>
+      <div style="margin-top:4px">${summary.syncEventCount} shared events across ${summary.syncItemCount} ${summary.syncItemCount === 1 ? "POItem" : "POItems"} in the current scope.</div>
+      <div style="margin-top:4px">${isVariantFocusMode()
+        ? `${variantFocusData?.poCount ?? summary.poCount} purchase orders contribute to the selected lifecycle variant.`
+        : "Only POItems with shared events remain expanded so cross-entity interactions stand out immediately."}</div>
+      ${variantFocusData?.sequence?.length
+        ? `<div class="community-chip-group">${variantFocusData.sequence.map(activity => `<span class="community-chip">${_escapeHtml(activity)}</span>`).join("")}</div>`
+        : ""}
+    `;
+    return;
+  }
+
+  if (variantFocusData) {
+    panel.innerHTML = `
+      <div><b>Selected variant</b></div>
+      <div style="margin-top:4px">${variantFocusData.totalInstances} aligned instances across ${variantFocusData.poCount} POs.</div>
+      <div style="margin-top:4px">${state.workspaceView === "cohort"
+        ? "Variant Cohort compares the matching purchase orders at a higher level before you drop back into the swim-lane canvas."
+        : "The focused canvas keeps the original PO/item swim-lane view while restricting it to this lifecycle variant."}</div>
+      <div class="community-chip-group">
+        ${(variantFocusData.sequence ?? []).map(activity => `<span class="community-chip">${_escapeHtml(activity)}</span>`).join("")}
+      </div>
+    `;
     return;
   }
 
@@ -887,11 +1359,737 @@ function updatePatternPanel(layout) {
   `;
 }
 
+function _buildVariantOverviewGraph() {
+  const variantData = getVariantOverview({
+    activities: state.activities,
+  });
+  return {
+    ...variantData,
+    dfGraph: getActivityDfGraph({
+      activities: state.activities,
+    }),
+  };
+}
+
+function _buildVariantFocusViewData() {
+  return getVariantFocusData(state.selectedVariant, {
+    activities: state.activities,
+  });
+}
+
+function _buildFocusGraphs() {
+  if (state.selectedVariant?.length) {
+    const grouped = new Map();
+    const store = getStore();
+    state.selectedVariant.forEach(itemId => {
+      const poId = store.eventsByItem[itemId]?.[0]?.po_id;
+      if (!poId) return;
+      if (!grouped.has(poId)) grouped.set(poId, new Set());
+      grouped.get(poId).add(itemId);
+    });
+
+    return [...grouped.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([poId, itemIds]) => getGraph(poId, {
+        activities: state.activities,
+        itemIds,
+      }));
+  }
+
+  if (!state.selectedPo) return [];
+  return [getGraph(state.selectedPo, {
+    activities: state.activities,
+    maxItems: state.maxItems,
+  })];
+}
+
+function _firstVariantPoId(instanceIds) {
+  if (!instanceIds?.length) return null;
+  const store = getStore();
+  return store.eventsByItem[instanceIds[0]]?.[0]?.po_id ?? null;
+}
+
+function _variantPoCount(instanceIds) {
+  const store = getStore();
+  return new Set(
+    (instanceIds ?? [])
+      .map(itemId => store.eventsByItem[itemId]?.[0]?.po_id)
+      .filter(Boolean)
+  ).size;
+}
+
+function renderWorkspaceHub(graph) {
+  const store = getStore();
+  const totalInstances = store.poList.reduce((sum, po) => sum + po.itemCount, 0);
+  const dominant = graph?.variants?.[0] ?? null;
+
+  htmlView.innerHTML = `
+    <div class="html-surface hub-surface">
+      <section class="surface-hero">
+        <div class="surface-kicker">ANALYSIS WORKSPACE</div>
+        <div class="surface-title-row">
+          <div>
+            <h2>Choose a View by Task</h2>
+            <p>The workspace separates object-centric process comprehension into dedicated screens so T1–T4 can be performed without piling every chart, every filter, and every control into one overloaded view.</p>
+          </div>
+          <div class="surface-metric-group">
+            <span class="surface-metric-pill">${store.poList.length} purchase orders</span>
+            <span class="surface-metric-pill">${totalInstances} instances</span>
+            <span class="surface-metric-pill">${store.events.length} events</span>
+            <span class="surface-metric-pill">${store.allActivities.length} activities</span>
+          </div>
+        </div>
+        ${dominant ? `
+          <div class="surface-sequence-block">
+            <div class="surface-sequence-caption">Dominant lifecycle preview · ${Math.round((dominant.frequency ?? 0) * 100)}%</div>
+            <div class="surface-sequence-row">${_renderActivitySequenceHtml(dominant.sequence, { className: "surface-sequence-chip" })}</div>
+          </div>
+        ` : ""}
+      </section>
+
+      <section class="surface-card">
+        <div class="surface-card-head">
+          <div>
+            <div class="surface-card-kicker">Task Map</div>
+            <h3>Views Aligned to T1–T4</h3>
+          </div>
+          <div class="surface-card-meta">Use the workspace as an analytical sequence, not a single dashboard.</div>
+        </div>
+        <div class="hub-card-grid">
+          ${_renderHubCardHtml("Swim-Lane Detail", "T1 · Locate", "Read the temporally ordered df-path for one entity instance and inspect its local context inside a purchase order.", "detail", ["T1", "T2", "T4"])}
+          ${_renderHubCardHtml("Variant Landscape", "T2 · Compare", "Compare dominant and deviating lifecycle variants across the entire dataset before drilling into one pattern.", "variants", ["T2", "T4"])}
+          ${_renderHubCardHtml("Synchronization Lens", "T3 · Identify", "Force the canvas onto shared events and participating lifecycles to reveal synchronization points across entities.", "sync", ["T3"])}
+          ${_renderHubCardHtml("Activity Relations", "T4 · Summarize", "Use the transition matrix and aggregated flow summaries to read dominant process structure and likely bottlenecks.", "relations", ["T4"])}
+          ${_renderHubCardHtml("Variant Cohort", "T2 · Compare", "After selecting a variant, compare the matching purchase orders side by side without compressing them into the canvas.", "cohort", ["T2", "T4"], !state.selectedVariant?.length)}
+        </div>
+      </section>
+    </div>
+  `;
+
+  _bindSurfaceViewButtons();
+}
+
+function renderVariantLandscapeView(graph) {
+  const dominant = graph?.variants?.[0] ?? null;
+  const topVariantShare = Math.round((dominant?.frequency ?? 0) * 100);
+
+  htmlView.innerHTML = `
+    <div class="html-surface variant-landscape-surface">
+      <section class="surface-hero">
+        <div class="surface-kicker">T2 · COMPARE</div>
+        <div class="surface-title-row">
+          <div>
+            <h2>Variant Landscape</h2>
+            <p>Compare full lifecycle variants across all entity instances, identify the dominant pattern, and choose a variant before moving into cohort or swim-lane analysis.</p>
+          </div>
+          <div class="surface-metric-group">
+            <span class="surface-metric-pill">${graph?.totalInstances ?? 0} instances</span>
+            <span class="surface-metric-pill">${graph?.variantCount ?? 0} distinct variants</span>
+            <span class="surface-metric-pill">${graph?.variants?.length ?? 0} shown</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="surface-grid surface-grid-overview">
+        <section class="surface-card surface-card-large">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">Variant Ranking</div>
+              <h3>Lifecycle sequences by frequency</h3>
+            </div>
+            <div class="surface-card-meta">Click a row to focus matching instances in the swim-lane canvas</div>
+          </div>
+          <div class="variant-rank-list" id="variant-rank-list">${graph?.variants?.length ? "" : `<div class="empty-state">No variants match the current activity filter.</div>`}</div>
+        </section>
+
+        <section class="surface-card">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">Reading Guide</div>
+              <h3>How to use this view</h3>
+            </div>
+            <div class="surface-card-meta">Supports T2 and T4</div>
+          </div>
+          ${_renderTaskSupportListHtml([
+            "Read the most frequent lifecycle as the dominant reference pattern.",
+            "Compare lower-ranked rows to spot deviations in activity order and coverage.",
+            "Click a variant to move from dataset-level comparison into matching cases.",
+          ])}
+        </section>
+
+        <section class="surface-card">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">Dominant Pattern</div>
+              <h3>${dominant ? `${topVariantShare}% of instances` : "No dominant variant"}</h3>
+            </div>
+            <div class="surface-card-meta">${graph?.variantCount ?? 0} total variants</div>
+          </div>
+          ${dominant
+            ? `<div class="surface-sequence-row">${_renderActivitySequenceHtml(dominant.sequence, { className: "surface-sequence-chip" })}</div>`
+            : `<div class="empty-state">No lifecycle variant matches the current activity filter.</div>`}
+        </section>
+      </div>
+    </div>
+  `;
+
+  _fillVariantRankList(graph, "variant-rank-list");
+}
+
+function renderActivityRelationsView(graph) {
+  const matrix = _buildTransitionMatrixModel(graph?.dfGraph ?? {});
+  const topTransitions = (matrix.edges ?? []).slice(0, 12);
+  const orderedActivities = matrix.activities ?? [];
+
+  htmlView.innerHTML = `
+    <div class="html-surface relations-surface">
+      <section class="surface-hero">
+        <div class="surface-kicker">T4 · SUMMARIZE</div>
+        <div class="surface-title-row">
+          <div>
+            <h2>Activity Relations</h2>
+            <p>Use the aggregated activity flow to summarize the dominant process narrative, identify the strongest transitions, and separate main-line behavior from weaker paths.</p>
+          </div>
+          <div class="surface-metric-group">
+            <span class="surface-metric-pill">${orderedActivities.length} activities</span>
+            <span class="surface-metric-pill">${matrix.edges?.length ?? 0} transitions</span>
+            <span class="surface-metric-pill">${graph?.totalInstances ?? 0} instances</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="surface-card surface-card-large">
+        <div class="surface-card-head">
+          <div>
+            <div class="surface-card-kicker">Activity Relations</div>
+            <h3>Transition Matrix</h3>
+          </div>
+          <div class="surface-card-meta">Rows = source · columns = target</div>
+        </div>
+        ${_renderTransitionMatrixHtml(matrix)}
+      </section>
+
+      <div class="surface-grid surface-grid-overview">
+        <section class="surface-card">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">High Signal</div>
+              <h3>Strongest Transitions</h3>
+            </div>
+            <div class="surface-card-meta">Sorted by occurrence count</div>
+          </div>
+          <div class="transition-list">
+            ${topTransitions.length
+              ? topTransitions.map(edge => {
+                  const share = graph?.totalInstances ? (edge.count / graph.totalInstances) : 0;
+                  return `
+                    <div class="transition-item">
+                      <div class="transition-item-route">${_escapeHtml(edge.source)} <span>→</span> ${_escapeHtml(edge.target)}</div>
+                      <div class="transition-item-meta">${edge.count} instances · ${Math.round(share * 100)}%</div>
+                    </div>
+                  `;
+                }).join("")
+              : `<div class="empty-state">No activity transitions match the current activity filter.</div>`}
+          </div>
+        </section>
+
+        <section class="surface-card">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">Task Support</div>
+              <h3>How to use this view</h3>
+            </div>
+            <div class="surface-card-meta">Supports T4</div>
+          </div>
+          ${_renderTaskSupportListHtml([
+            "Read high-intensity matrix cells as dominant transitions in the process narrative.",
+            "Use the sorted transition list to identify central handoffs and likely bottleneck candidates.",
+            "Switch back to Swim-Lane Detail or Synchronization Lens to validate a relation in context.",
+          ])}
+        </section>
+
+        <section class="surface-card">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">Activity Volume</div>
+              <h3>Occurrences by step order</h3>
+            </div>
+            <div class="surface-card-meta">Earlier activities stay left in the matrix order</div>
+          </div>
+          <div class="activity-bar-list">
+            ${(orderedActivities.length
+              ? orderedActivities
+              : []).map(activity => {
+                const width = matrix.maxNodeCount > 0 ? Math.max(6, (activity.count / matrix.maxNodeCount) * 100) : 0;
+                return `
+                  <div class="activity-bar-row">
+                    <div class="activity-bar-label">${_escapeHtml(activity.label)}</div>
+                    <div class="activity-bar-track"><span style="width:${width}%"></span></div>
+                    <div class="activity-bar-count">${activity.count}</div>
+                  </div>
+                `;
+              }).join("") || `<div class="empty-state">No activities match the current activity filter.</div>`}
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+function renderVariantCohortEmpty() {
+  htmlView.innerHTML = `
+    <div class="html-surface cohort-empty-surface">
+      <section class="surface-hero">
+        <div class="surface-kicker">T2 · COMPARE</div>
+        <div class="surface-title-row">
+          <div>
+            <h2>Variant Cohort</h2>
+            <p>Select a lifecycle variant first, then return here to compare the matching purchase orders in a dedicated cohort screen.</p>
+          </div>
+        </div>
+      </section>
+      <section class="surface-card">
+        <div class="empty-state">No variant is currently selected. Open Variant Landscape, choose a lifecycle row, then come back to Variant Cohort.</div>
+      </section>
+    </div>
+  `;
+}
+
+function _renderHubCardHtml(title, kicker, description, targetView, tasks, disabled = false) {
+  return `
+    <article class="hub-card">
+      <div class="surface-card-kicker">${_escapeHtml(kicker)}</div>
+      <h3>${_escapeHtml(title)}</h3>
+      <p>${_escapeHtml(description)}</p>
+      <div class="landing-task-tags">${tasks.map(task => `<span>${_escapeHtml(task)}</span>`).join("")}</div>
+      <button type="button" class="btn-small hub-open-btn" data-open-workspace-view="${_escapeHtml(targetView)}" ${disabled ? "disabled" : ""}>Open view</button>
+    </article>
+  `;
+}
+
+function _renderTaskSupportListHtml(items) {
+  return `
+    <ul class="task-support-list">
+      ${items.map(item => `<li>${_escapeHtml(item)}</li>`).join("")}
+    </ul>
+  `;
+}
+
+function _bindSurfaceViewButtons() {
+  htmlView.querySelectorAll("[data-open-workspace-view]").forEach(button => {
+    button.addEventListener("click", () => enterWorkspace(button.dataset.openWorkspaceView));
+  });
+}
+
+function _fillVariantRankList(graph, listId = "variant-rank-list") {
+  const store = getStore();
+  const list = document.getElementById(listId);
+  if (!list) return;
+  list.innerHTML = "";
+  (graph?.variants ?? []).forEach(variant => {
+    const poCount = new Set(
+      (variant.instanceIds ?? [])
+        .map(itemId => store.eventsByItem[itemId]?.[0]?.po_id)
+        .filter(Boolean)
+    ).size;
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `variant-rank-row${variant.isdominant ? " dominant" : ""}`;
+    row.innerHTML = `
+      <span class="variant-rank-badge">${variant.count}</span>
+      <span class="variant-rank-sequence">${_renderActivitySequenceHtml(variant.sequence, { className: "variant-sequence-chip" })}</span>
+      <span class="variant-rank-share">${Math.round((variant.frequency ?? 0) * 100)}%</span>
+      <span class="variant-rank-meta">${poCount} ${poCount === 1 ? "PO" : "POs"}${variant.isdominant ? " · dominant" : ""}</span>
+    `;
+    row.addEventListener("click", () => onVariantSelect(variant.instanceIds));
+    list.appendChild(row);
+  });
+}
+
+function renderOverviewDashboard(graph) {
+  const store = getStore();
+  const matrix = _buildTransitionMatrixModel(graph?.dfGraph ?? {});
+  const dominant = graph?.variants?.[0] ?? null;
+  const topTransitions = (matrix.edges ?? []).slice(0, 10);
+  const orderedActivities = matrix.activities ?? [];
+  const totalShownInstances = (graph?.variants ?? []).reduce((sum, variant) => sum + variant.count, 0);
+
+  htmlView.innerHTML = `
+    <div class="html-surface overview-surface">
+      <section class="surface-hero">
+        <div class="surface-kicker">PROCESS VARIANT LANDSCAPE</div>
+        <div class="surface-title-row">
+          <div>
+            <h2>Variant Overview</h2>
+            <p>Ranked lifecycle variants plus an activity transition matrix that exposes the strongest relations without forcing a tiny node-link graph.</p>
+          </div>
+          <div class="surface-metric-group">
+            <span class="surface-metric-pill">${graph?.totalInstances ?? 0} total instances</span>
+            <span class="surface-metric-pill">${graph?.variantCount ?? 0} distinct variants</span>
+            <span class="surface-metric-pill">${orderedActivities.length} activities</span>
+          </div>
+        </div>
+        ${dominant ? `
+          <div class="surface-sequence-block">
+            <div class="surface-sequence-caption">Dominant variant · ${Math.round((dominant.frequency ?? 0) * 100)}%</div>
+            <div class="surface-sequence-row">${_renderActivitySequenceHtml(dominant.sequence, { className: "surface-sequence-chip" })}</div>
+          </div>
+        ` : ""}
+      </section>
+
+      <section class="surface-card">
+        <div class="surface-card-head">
+          <div>
+            <div class="surface-card-kicker">Variant Ranking</div>
+            <h3>Click a variant to inspect the matching purchase orders</h3>
+          </div>
+          <div class="surface-card-meta">${graph?.variants?.length ?? 0} shown · ${totalShownInstances} grouped instances</div>
+        </div>
+        <div class="variant-rank-list" id="variant-rank-list">${graph?.variants?.length ? "" : `<div class="empty-state">No variants match the current activity filter.</div>`}</div>
+      </section>
+
+      <div class="surface-grid surface-grid-overview">
+        <section class="surface-card surface-card-large">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">Activity Relations</div>
+              <h3>Transition Matrix</h3>
+            </div>
+            <div class="surface-card-meta">Rows = source · columns = target</div>
+          </div>
+          ${_renderTransitionMatrixHtml(matrix)}
+        </section>
+
+        <section class="surface-card">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">High Signal</div>
+              <h3>Strongest Transitions</h3>
+            </div>
+            <div class="surface-card-meta">Sorted by occurrence count</div>
+          </div>
+          <div class="transition-list">
+            ${topTransitions.length
+              ? topTransitions.map(edge => {
+                  const share = graph?.totalInstances ? (edge.count / graph.totalInstances) : 0;
+                  return `
+                    <div class="transition-item">
+                      <div class="transition-item-route">${_escapeHtml(edge.source)} <span>→</span> ${_escapeHtml(edge.target)}</div>
+                      <div class="transition-item-meta">${edge.count} instances · ${Math.round(share * 100)}%</div>
+                    </div>
+                  `;
+                }).join("")
+              : `<div class="empty-state">No activity transitions match the current activity filter.</div>`}
+          </div>
+        </section>
+
+        <section class="surface-card">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">Activity Volume</div>
+              <h3>Occurrences by Step Order</h3>
+            </div>
+            <div class="surface-card-meta">Earlier activities stay left in the matrix order</div>
+          </div>
+          <div class="activity-bar-list">
+            ${(orderedActivities.length
+              ? orderedActivities
+              : []).map(activity => {
+                const width = matrix.maxNodeCount > 0 ? Math.max(6, (activity.count / matrix.maxNodeCount) * 100) : 0;
+                return `
+                  <div class="activity-bar-row">
+                    <div class="activity-bar-label">${_escapeHtml(activity.label)}</div>
+                    <div class="activity-bar-track"><span style="width:${width}%"></span></div>
+                    <div class="activity-bar-count">${activity.count}</div>
+                  </div>
+                `;
+              }).join("") || `<div class="empty-state">No activities match the current activity filter.</div>`}
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+
+  _fillVariantRankList(graph, "variant-rank-list");
+}
+
+function renderVariantFocusDashboard(variantData) {
+  const totalEvents = (variantData?.pos ?? []).reduce((sum, po) => sum + (po.eventCount ?? 0), 0);
+  const medianCycleMs = _medianValue((variantData?.pos ?? []).map(po => po.medianCycleMs));
+
+  htmlView.innerHTML = `
+    <div class="html-surface variant-focus-surface">
+      <section class="surface-hero">
+        <div class="surface-kicker">T2 · COMPARE</div>
+        <div class="surface-title-row">
+          <div>
+            <h2>Variant Cohort</h2>
+            <p>Compare the purchase orders that match the selected lifecycle variant. Each row summarizes one purchase order, and each step cell shows the median elapsed time from instance start for that shared path.</p>
+          </div>
+          <div class="surface-metric-group">
+            <span class="surface-metric-pill">${variantData?.totalInstances ?? 0} instances</span>
+            <span class="surface-metric-pill">${variantData?.poCount ?? 0} POs</span>
+            <span class="surface-metric-pill">${totalEvents} events</span>
+            <span class="surface-metric-pill">Median cycle ${_formatDurationShort(medianCycleMs)}</span>
+          </div>
+        </div>
+        <div class="surface-sequence-block">
+          <div class="surface-sequence-caption">Selected variant sequence</div>
+          <div class="surface-sequence-row">${_renderActivitySequenceHtml(variantData?.sequence ?? [], { className: "surface-sequence-chip" })}</div>
+        </div>
+      </section>
+
+      <section class="surface-card">
+        <div class="surface-card-head">
+          <div>
+            <div class="surface-card-kicker">PO Comparison</div>
+            <h3>Median elapsed time by lifecycle step</h3>
+          </div>
+          <div class="surface-card-meta">Span ${_formatDateSpan(variantData?.firstDate, variantData?.lastDate)}</div>
+        </div>
+        ${_renderVariantCohortTableHtml(variantData)}
+      </section>
+
+      <div class="surface-grid surface-grid-focus">
+        <section class="surface-card">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">Resource Signature</div>
+              <h3>Most common resources in this variant</h3>
+            </div>
+            <div class="surface-card-meta">${variantData?.topResources?.length ?? 0} shown</div>
+          </div>
+          <div class="resource-pill-list">
+            ${(variantData?.topResources?.length
+              ? variantData.topResources
+              : []).map(entry => `
+                <span class="resource-pill">${_escapeHtml(entry.resource)} <b>${entry.count}</b></span>
+              `).join("") || `<div class="empty-state">No named resources available for this variant cohort.</div>`}
+          </div>
+        </section>
+
+        <section class="surface-card surface-card-large">
+          <div class="surface-card-head">
+            <div>
+              <div class="surface-card-kicker">Matching Cases</div>
+              <h3>Purchase Order Cards</h3>
+            </div>
+            <div class="surface-card-meta">Open a card to drill into a single PO on the canvas</div>
+          </div>
+          <div class="po-card-grid">
+            ${(variantData?.pos ?? []).map(po => _renderVariantPoCardHtml(po)).join("") || `<div class="empty-state">No purchase orders remain in the selected variant.</div>`}
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+
+  htmlView.querySelectorAll("[data-open-po]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      focusPo(button.dataset.openPo, { resetFilters: false, clearVariant: true });
+    });
+  });
+}
+
+function _renderTransitionMatrixHtml(matrix) {
+  const activities = matrix?.activities ?? [];
+  if (!activities.length) {
+    return `<div class="empty-state">No activity relations match the current activity filter.</div>`;
+  }
+
+  return `
+    <div class="matrix-scroll">
+      <div class="transition-matrix" style="--matrix-cols:${activities.length}">
+        <div class="matrix-corner"></div>
+        ${activities.map(activity => `<div class="matrix-head-cell">${_escapeHtml(activity.label)}</div>`).join("")}
+        ${activities.map(source => `
+          <div class="matrix-row-label">${_escapeHtml(source.label)}</div>
+          ${activities.map(target => {
+            const count = matrix.lookup[`${source.id}__${target.id}`] ?? 0;
+            const alpha = count > 0 && matrix.maxEdgeCount > 0 ? (0.08 + (count / matrix.maxEdgeCount) * 0.4) : 0.04;
+            return `
+              <div class="matrix-cell" style="background:rgba(79,142,247,${alpha.toFixed(3)})" title="${_escapeHtml(source.label)} → ${_escapeHtml(target.label)}: ${count}">
+                ${count > 0 ? count : ""}
+              </div>
+            `;
+          }).join("")}
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function _renderVariantCohortTableHtml(variantData) {
+  const sequence = variantData?.sequence ?? [];
+  const maxOffsetMs = Math.max(variantData?.maxStepOffsetMs ?? 0, 1);
+  if (!sequence.length || !(variantData?.pos ?? []).length) {
+    return `<div class="empty-state">No purchase orders remain in this variant after applying the current activity filter.</div>`;
+  }
+
+  return `
+    <div class="cohort-table-wrap">
+      <div class="cohort-table" style="--step-count:${sequence.length}">
+        <div class="cohort-row cohort-header">
+          <div class="cohort-cell cohort-meta-head">Purchase Order</div>
+          <div class="cohort-cell cohort-meta-head">Inst.</div>
+          <div class="cohort-cell cohort-meta-head">Cycle</div>
+          ${sequence.map((activity, index) => `
+            <div class="cohort-cell cohort-step-head">
+              <span class="cohort-step-index">${index + 1}</span>
+              <span class="cohort-step-label">${_escapeHtml(activity)}</span>
+            </div>
+          `).join("")}
+        </div>
+        ${(variantData.pos ?? []).map(po => `
+          <div class="cohort-row">
+            <div class="cohort-cell cohort-meta-cell">
+              <div class="cohort-po-id">${_escapeHtml(po.poId)}</div>
+              <div class="cohort-po-span">${_formatDateSpan(po.firstDate, po.lastDate)}</div>
+            </div>
+            <div class="cohort-cell cohort-meta-cell cohort-meta-number">${po.instanceCount}</div>
+            <div class="cohort-cell cohort-meta-cell cohort-meta-number">${_formatDurationShort(po.medianCycleMs)}</div>
+            ${(po.steps ?? []).map(step => {
+              const alpha = 0.08 + ((step.medianOffsetMs ?? 0) / maxOffsetMs) * 0.34;
+              const resourceHint = step.topResources?.[0]?.resource
+                ? _escapeHtml(_truncate(step.topResources[0].resource, 16))
+                : `${step.resourceCount} res`;
+              const offsetLabel = step.index === 0 ? "start" : `+${_formatDurationShort(step.medianOffsetMs)}`;
+              return `
+                <div class="cohort-cell cohort-step-cell" style="background:rgba(79,142,247,${alpha.toFixed(3)})" title="${_escapeHtml(step.activity)} · ${offsetLabel}">
+                  <div class="cohort-step-offset">${offsetLabel}</div>
+                  <div class="cohort-step-resource">${resourceHint}</div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function _renderVariantPoCardHtml(po) {
+  const attrs = Object.entries(po.attrs ?? {})
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .slice(0, 3)
+    .map(([key, value]) => `<span class="po-attr-pill">${_escapeHtml(key)}: ${_escapeHtml(value)}</span>`)
+    .join("");
+
+  return `
+    <article class="variant-po-card">
+      <div class="variant-po-card-head">
+        <div>
+          <div class="surface-card-kicker">Purchase Order</div>
+          <h3>${_escapeHtml(po.poId)}</h3>
+        </div>
+        <button type="button" class="btn-small" data-open-po="${_escapeHtml(po.poId)}">Open detail</button>
+      </div>
+      <div class="variant-po-metrics">
+        <span class="surface-metric-pill">${po.instanceCount} instances</span>
+        <span class="surface-metric-pill">${po.eventCount} events</span>
+        <span class="surface-metric-pill">${_formatDurationShort(po.medianCycleMs)} cycle</span>
+      </div>
+      <div class="variant-po-resources">
+        ${(po.topResources ?? []).map(entry => `<span class="resource-pill">${_escapeHtml(entry.resource)} <b>${entry.count}</b></span>`).join("")}
+      </div>
+      ${attrs ? `<div class="variant-po-attrs">${attrs}</div>` : ""}
+      <div class="variant-po-instance-list">
+        ${(po.instances ?? []).slice(0, 3).map(instance => `
+          <div class="variant-po-instance-row">
+            <span class="variant-po-instance-id">${_escapeHtml(instance.itemId)}</span>
+            <span class="variant-po-instance-meta">${_formatDateSpan(instance.startDate, instance.endDate)} · ${_formatDurationShort(instance.cycleMs)}</span>
+          </div>
+        `).join("")}
+        ${(po.instances?.length ?? 0) > 3 ? `<div class="variant-po-instance-more">+${po.instances.length - 3} more matching instances</div>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function _renderActivitySequenceHtml(sequence, options = {}) {
+  const colorByActivity = getStore().activityColorByName ?? {};
+  const className = options.className ?? "surface-sequence-chip";
+  return (sequence ?? []).map(activity => {
+    const color = colorByActivity[activity] ?? "#64748b";
+    return `
+      <span class="${className}" style="--chip-color:${color};--chip-fill:${_withAlpha(color, 0.18)};--chip-stroke:${_withAlpha(color, 0.52)}">
+        ${_escapeHtml(activity)}
+      </span>
+    `;
+  }).join("");
+}
+
+function _buildTransitionMatrixModel(dfGraph) {
+  const activities = [...(dfGraph?.nodes ?? [])]
+    .sort((a, b) => (a.avgIndex ?? Infinity) - (b.avgIndex ?? Infinity) || b.count - a.count || a.label.localeCompare(b.label));
+  const lookup = {};
+  const edges = [...(dfGraph?.edges ?? [])]
+    .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+  edges.forEach(edge => {
+    lookup[`${edge.source}__${edge.target}`] = edge.count;
+  });
+  return {
+    activities,
+    lookup,
+    edges,
+    maxEdgeCount: Math.max(...edges.map(edge => edge.count), 0),
+    maxNodeCount: Math.max(...activities.map(activity => activity.count), 0),
+  };
+}
+
 function _escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function _medianValue(values) {
+  const numbers = [...(values ?? [])]
+    .filter(value => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (!numbers.length) return 0;
+  const mid = Math.floor(numbers.length / 2);
+  return numbers.length % 2 === 0
+    ? (numbers[mid - 1] + numbers[mid]) / 2
+    : numbers[mid];
+}
+
+function _formatDurationShort(ms) {
+  const value = Number.isFinite(ms) ? ms : 0;
+  const day = 1000 * 60 * 60 * 24;
+  const hour = 1000 * 60 * 60;
+  if (value >= day) return `${Math.round(value / day)}d`;
+  if (value >= hour) return `${Math.round(value / hour)}h`;
+  return `${Math.max(0, Math.round(value / (1000 * 60)))}m`;
+}
+
+function _formatDateShort(date) {
+  if (!date) return "n/a";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+function _formatDateSpan(startDate, endDate) {
+  if (!startDate && !endDate) return "n/a";
+  if (!startDate || !endDate) return _formatDateShort(startDate ?? endDate);
+  return `${_formatDateShort(startDate)} → ${_formatDateShort(endDate)}`;
+}
+
+function _truncate(value, maxChars = 18) {
+  const text = String(value ?? "");
+  return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
+}
+
+function _withAlpha(color, alpha) {
+  const hex = String(color ?? "").trim().replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return color;
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 const tip = document.getElementById("tooltip");
@@ -918,18 +2116,30 @@ function onItemExpand(itemId) {
 
 function showLoading(on) {
   document.getElementById("loading").classList.toggle("hidden", !on);
+  landingEl.classList.toggle("landing-loading", on);
+  if (on) {
+    const statusEl = document.getElementById("landing-data-status");
+    if (statusEl && state.screen === "home") {
+      statusEl.textContent = "Loading dataset...";
+    }
+  } else if (state.screen === "home") {
+    refreshLandingState();
+  }
 }
 function showDropzone(on) {
   document.getElementById("dropzone").classList.toggle("hidden", !on);
 }
 
 function fitCurrentView() {
+  if (isHtmlSurfaceMode()) return;
   fitToView(undefined, {
     minScale: state.viewMode === "overview" ? OVERVIEW_MIN_SCALE : undefined,
+    ...getCanvasFitOptions(),
   });
 }
 
 function resetCurrentZoom() {
+  if (isHtmlSurfaceMode()) return;
   resetZoom({ animate: true });
 }
 
@@ -943,6 +2153,7 @@ function hasDataLoaded() {
 
 function shouldIgnoreShortcut(event) {
   if (!hasDataLoaded()) return true;
+  if (isHtmlSurfaceMode()) return true;
   if (event.ctrlKey || event.metaKey || event.altKey) return true;
   const active = document.activeElement;
   if (!active) return false;
@@ -958,3 +2169,4 @@ window.addEventListener("resize", () => {
 </script>
 </body>
 </html>
+

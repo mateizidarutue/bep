@@ -166,14 +166,18 @@ export function getStore() {
 export function getGraph(poId, filters = {}) {
   if (!store) throw new Error("Store not built.");
 
-  const { maxItems = 0 } = filters;
+  const { maxItems = 0, itemIds = null } = filters;
+  const scopedItemSet = itemIds ? new Set(itemIds) : null;
 
-  const allItems = [...(store.itemsByPo[poId] ?? [])].sort();
+  const allItems = [...(store.itemsByPo[poId] ?? [])]
+    .sort()
+    .filter(item => !scopedItemSet || scopedItemSet.has(item));
   let items = [...allItems];
-  if (maxItems > 0) items = items.slice(0, maxItems);
+  if (!scopedItemSet && maxItems > 0) items = items.slice(0, maxItems);
   const itemSet = new Set(items);
 
-  const allEvents = _filterEvents(store.eventsByPo[poId] ?? [], filters);
+  const allEvents = _filterEvents(store.eventsByPo[poId] ?? [], filters)
+    .filter(event => allItems.includes(event.poitem_id));
   const events = allEvents.filter(event => itemSet.has(event.poitem_id));
 
   const allEventIdSet = new Set(allEvents.map(event => event.event_id));
@@ -188,10 +192,10 @@ export function getGraph(poId, filters = {}) {
   const dfPo = (store.dfPoByPo[poId] ?? []).filter(edge => eventIdSet.has(edge.source) && eventIdSet.has(edge.target));
 
   const meta = {
-    totalEvents: (store.eventsByPo[poId] ?? []).length,
+    totalEvents: (store.eventsByPo[poId] ?? []).filter(event => allItems.includes(event.poitem_id)).length,
     filteredEvents: events.length,
     filteredEventsAll: allEvents.length,
-    totalItems: store.itemsByPo[poId]?.size ?? 0,
+    totalItems: allItems.length,
     shownItems: items.length,
     dfItemCount: dfItem.length,
     dfItemCountAll: allDfItem.length,
@@ -302,6 +306,7 @@ export function getOverviewGraph(filters = {}) {
 
   clusters.forEach(cluster => {
     const members = nodes.filter(node => node.clusterKey === cluster.id);
+    cluster.count = cluster.nodeIds.length;
     cluster.resources = _aggregateCommunityResources(members);
     cluster.attributes = _aggregateCommunityAttrs(members);
   });
@@ -331,6 +336,266 @@ export function getOverviewGraph(filters = {}) {
     communityEdges,
     clusters,
     meta,
+  };
+}
+
+export function getVariantOverview(filters = {}, maxVariants = 12) {
+  if (!store) throw new Error("Store not built.");
+
+  const instances = _collectItemSequences(filters);
+  const totalInstances = instances.length;
+  const variantsByKey = new Map();
+
+  instances.forEach(instance => {
+    const key = JSON.stringify(instance.sequence);
+    if (!variantsByKey.has(key)) {
+      variantsByKey.set(key, {
+        sequence: [...instance.sequence],
+        instanceIds: [],
+        count: 0,
+        frequency: 0,
+        isdominant: false,
+      });
+    }
+
+    const variant = variantsByKey.get(key);
+    variant.instanceIds.push(instance.entityId);
+  });
+
+  const variants = [...variantsByKey.entries()]
+    .map(([key, variant]) => ({
+      ...variant,
+      count: variant.instanceIds.length,
+      frequency: totalInstances > 0 ? variant.instanceIds.length / totalInstances : 0,
+      _key: key,
+    }))
+    .sort((a, b) =>
+      b.count - a.count ||
+      b.sequence.length - a.sequence.length ||
+      a._key.localeCompare(b._key)
+    );
+
+  const variantCount = variants.length;
+  const limit = maxVariants > 0 ? maxVariants : variants.length;
+  const shownVariants = variants.slice(0, limit).map((variant, index) => ({
+    sequence: variant.sequence,
+    instanceIds: variant.instanceIds,
+    count: variant.count,
+    frequency: variant.frequency,
+    isdominant: index === 0,
+  }));
+
+  return {
+    isVariantOverview: true,
+    variants: shownVariants,
+    totalInstances,
+    variantCount,
+  };
+}
+
+export function getActivityDfGraph(filters = {}) {
+  if (!store) throw new Error("Store not built.");
+
+  const instances = _collectItemSequences(filters);
+  const nodeCountByActivity = {};
+  const nodeIndexSumByActivity = {};
+  const nodePosCountByActivity = {};
+  const edgeByKey = new Map();
+
+  instances.forEach(instance => {
+    instance.sequence.forEach((activity, index) => {
+      nodeCountByActivity[activity] = (nodeCountByActivity[activity] ?? 0) + 1;
+      nodeIndexSumByActivity[activity] = (nodeIndexSumByActivity[activity] ?? 0) + index;
+      nodePosCountByActivity[activity] = (nodePosCountByActivity[activity] ?? 0) + 1;
+    });
+
+    for (let i = 0; i < instance.sequence.length - 1; i++) {
+      const source = instance.sequence[i];
+      const target = instance.sequence[i + 1];
+      const key = `${source}__${target}`;
+      if (!edgeByKey.has(key)) {
+        edgeByKey.set(key, { source, target, count: 0 });
+      }
+      edgeByKey.get(key).count += 1;
+    }
+  });
+
+  const nodes = Object.entries(nodeCountByActivity)
+    .map(([id, count]) => ({
+      id,
+      label: id,
+      count,
+      avgIndex: (nodeIndexSumByActivity[id] ?? 0) / Math.max(nodePosCountByActivity[id] ?? 1, 1),
+    }))
+    .sort((a, b) => a.avgIndex - b.avgIndex || b.count - a.count || a.label.localeCompare(b.label));
+
+  const edges = [...edgeByKey.values()]
+    .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+
+  return { nodes, edges };
+}
+
+export function getVariantFocusData(instanceIds, filters = {}) {
+  if (!store) throw new Error("Store not built.");
+
+  const scopedItemIds = [...new Set(instanceIds ?? [])].filter(Boolean);
+  const instances = _collectItemSequences({
+    ...filters,
+    itemIds: scopedItemIds,
+  });
+
+  if (!instances.length) {
+    return {
+      sequence: [],
+      totalInstances: 0,
+      poCount: 0,
+      pos: [],
+      topResources: [],
+      maxStepOffsetMs: 0,
+      firstDate: null,
+      lastDate: null,
+    };
+  }
+
+  const sequence = [...(instances[0]?.sequence ?? [])];
+  const poMap = new Map();
+  const resourceCountByName = {};
+  let globalMinTime = null;
+  let globalMaxTime = null;
+  let maxStepOffsetMs = 0;
+
+  instances.forEach(instance => {
+    const summary = store.poSummaryById[instance.poId] ?? {};
+    const stepEvents = instance.eventIds
+      .map(eventId => store.eventById[eventId])
+      .filter(Boolean)
+      .map((event, index, list) => {
+        const startDate = list[0]?.date ?? null;
+        const prevDate = index > 0 ? list[index - 1]?.date ?? null : null;
+        const offsetMs = startDate && event.date ? event.date.getTime() - startDate.getTime() : 0;
+        const gapMs = prevDate && event.date ? event.date.getTime() - prevDate.getTime() : 0;
+        const resource = _isMeaningfulResource(event.org_resource) ? event.org_resource : "";
+        if (resource) resourceCountByName[resource] = (resourceCountByName[resource] ?? 0) + 1;
+        maxStepOffsetMs = Math.max(maxStepOffsetMs, offsetMs);
+        return {
+          activity: event.activity,
+          eventId: event.event_id,
+          timestamp: event.date,
+          resource,
+          offsetMs,
+          gapMs,
+        };
+      });
+
+    const startDate = stepEvents[0]?.timestamp ?? null;
+    const endDate = stepEvents.at(-1)?.timestamp ?? startDate;
+    const cycleMs = startDate && endDate ? endDate.getTime() - startDate.getTime() : 0;
+    if (!poMap.has(instance.poId)) {
+      poMap.set(instance.poId, {
+        poId: instance.poId,
+        attrs: summary.attrs ?? {},
+        instanceCount: 0,
+        eventCount: 0,
+        resources: {},
+        instances: [],
+        stepOffsets: sequence.map(() => []),
+        stepResources: sequence.map(() => []),
+        cycleTimes: [],
+        startTimes: [],
+        endTimes: [],
+      });
+    }
+
+    const poEntry = poMap.get(instance.poId);
+    poEntry.instanceCount += 1;
+    poEntry.eventCount += stepEvents.length;
+    poEntry.cycleTimes.push(cycleMs);
+    if (startDate) {
+      const time = startDate.getTime();
+      poEntry.startTimes.push(time);
+      globalMinTime = globalMinTime === null ? time : Math.min(globalMinTime, time);
+    }
+    if (endDate) {
+      const time = endDate.getTime();
+      poEntry.endTimes.push(time);
+      globalMaxTime = globalMaxTime === null ? time : Math.max(globalMaxTime, time);
+    }
+
+    stepEvents.forEach((step, index) => {
+      poEntry.stepOffsets[index].push(step.offsetMs);
+      if (step.resource) {
+        poEntry.stepResources[index].push(step.resource);
+        poEntry.resources[step.resource] = (poEntry.resources[step.resource] ?? 0) + 1;
+      }
+    });
+
+    poEntry.instances.push({
+      itemId: instance.entityId,
+      startDate,
+      endDate,
+      cycleMs,
+      steps: stepEvents,
+    });
+  });
+
+  const pos = [...poMap.values()]
+    .map(poEntry => {
+      const topResources = Object.entries(poEntry.resources)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 4)
+        .map(([resource, count]) => ({ resource, count }));
+
+      return {
+        poId: poEntry.poId,
+        attrs: poEntry.attrs,
+        instanceCount: poEntry.instanceCount,
+        eventCount: poEntry.eventCount,
+        topResources,
+        medianCycleMs: _medianNumber(poEntry.cycleTimes),
+        firstDate: poEntry.startTimes.length ? new Date(Math.min(...poEntry.startTimes)) : null,
+        lastDate: poEntry.endTimes.length ? new Date(Math.max(...poEntry.endTimes)) : null,
+        steps: sequence.map((activity, index) => {
+          const resources = poEntry.stepResources[index] ?? [];
+          const resourceCounts = _countBy(resources, value => value);
+          const topStepResources = Object.entries(resourceCounts)
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+            .slice(0, 2)
+            .map(([resource, count]) => ({ resource, count }));
+          return {
+            activity,
+            index,
+            medianOffsetMs: _medianNumber(poEntry.stepOffsets[index] ?? []),
+            resourceCount: Object.keys(resourceCounts).length,
+            topResources: topStepResources,
+          };
+        }),
+        instances: poEntry.instances
+          .sort((a, b) =>
+            (a.startDate?.getTime?.() ?? 0) - (b.startDate?.getTime?.() ?? 0) ||
+            a.itemId.localeCompare(b.itemId)
+          ),
+      };
+    })
+    .sort((a, b) =>
+      b.instanceCount - a.instanceCount ||
+      (a.firstDate?.getTime?.() ?? 0) - (b.firstDate?.getTime?.() ?? 0) ||
+      a.poId.localeCompare(b.poId)
+    );
+
+  const topResources = Object.entries(resourceCountByName)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 8)
+    .map(([resource, count]) => ({ resource, count }));
+
+  return {
+    sequence,
+    totalInstances: instances.length,
+    poCount: pos.length,
+    pos,
+    topResources,
+    maxStepOffsetMs,
+    firstDate: globalMinTime === null ? null : new Date(globalMinTime),
+    lastDate: globalMaxTime === null ? null : new Date(globalMaxTime),
   };
 }
 
@@ -379,6 +644,166 @@ export async function loadFromFiles(fileList) {
 
   const texts = await Promise.all(needed.map(name => byName[name].text()));
   return Object.fromEntries(needed.map((name, i) => [name, texts[i]]));
+}
+
+export async function loadFromXesFile(file) {
+  const text = await file.text();
+  return _buildSourcesFromXes(text);
+}
+
+function _buildSourcesFromXes(text) {
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(text, "application/xml");
+  const parseError = xml.querySelector("parsererror");
+  if (parseError) {
+    throw new Error("The uploaded XES file could not be parsed.");
+  }
+
+  const traceNodes = [...xml.getElementsByTagName("trace")];
+  if (!traceNodes.length) {
+    throw new Error("No traces were found in the uploaded XES log.");
+  }
+
+  const eventRows = [];
+  const poIds = new Set();
+  const poItemIds = new Set();
+  let eventCounter = 0;
+
+  traceNodes.forEach((traceNode, traceIndex) => {
+    const traceAttrs = _readXesAttributes(traceNode);
+    const caseId = traceAttrs.concept_name || traceAttrs.case_concept_name || `Trace_${traceIndex + 1}`;
+    const poId = _resolveXesPoId(traceAttrs, caseId);
+    const poItemId = caseId;
+    const eventNodes = [...traceNode.children].filter(child => child.tagName?.toLowerCase() === "event");
+
+    poIds.add(poId);
+    poItemIds.add(poItemId);
+
+    eventNodes.forEach((eventNode, eventIndex) => {
+      const eventAttrs = _readXesAttributes(eventNode);
+      const mergedAttrs = { ...traceAttrs, ...eventAttrs };
+      eventRows.push({
+        event_id: `E_${eventCounter++}`,
+        activity: mergedAttrs.concept_name || `Event ${eventIndex + 1}`,
+        timestamp: _normalizeXesTimestamp(mergedAttrs.time_timestamp, traceIndex, eventIndex),
+        po_id: poId,
+        poitem_id: poItemId,
+        org_resource: mergedAttrs.org_resource ?? "",
+        lifecycle_transition: mergedAttrs.lifecycle_transition ?? "",
+        Item_Type: mergedAttrs.Item_Type ?? mergedAttrs.case_Item_Type ?? "",
+        Item_Category: mergedAttrs.Item_Category ?? mergedAttrs.case_Item_Category ?? "",
+        Goods_Receipt: mergedAttrs.Goods_Receipt ?? mergedAttrs.case_Goods_Receipt ?? "",
+        GR_Based_Inv_Verif: mergedAttrs.GR_Based_Inv_Verif ?? mergedAttrs.case_GR_Based_Inv_Verif ?? "",
+        Company: mergedAttrs.Company ?? mergedAttrs.case_Company ?? "",
+        Document_Type: mergedAttrs.Document_Type ?? mergedAttrs.case_Document_Type ?? "",
+        Source: mergedAttrs.Source ?? mergedAttrs.case_Source ?? "",
+        Vendor: mergedAttrs.Vendor ?? mergedAttrs.case_Vendor ?? "",
+        Name: mergedAttrs.Name ?? mergedAttrs.case_Name ?? "",
+      });
+    });
+  });
+
+  if (!eventRows.length) {
+    throw new Error("The uploaded XES log contains no events.");
+  }
+
+  const entities = [
+    ...[...poItemIds].sort().map(entityId => ({ entity_id: entityId, EntityType: "POItem" })),
+    ...[...poIds].sort().map(entityId => ({ entity_id: entityId, EntityType: "PO" })),
+  ];
+
+  const corr = eventRows.flatMap(event => ([
+    { event_id: event.event_id, entity_id: event.poitem_id },
+    { event_id: event.event_id, entity_id: event.po_id },
+  ]));
+
+  const df = [
+    ..._buildSequentialDfRows(eventRows, "poitem_id", "POItem"),
+    ..._buildSequentialDfRows(eventRows, "po_id", "PO"),
+  ];
+
+  return {
+    events: _rowsToCsv(eventRows, [
+      "event_id", "activity", "timestamp", "po_id", "poitem_id", "org_resource", "lifecycle_transition",
+      "Item_Type", "Item_Category", "Goods_Receipt", "GR_Based_Inv_Verif",
+      "Company", "Document_Type", "Source", "Vendor", "Name",
+    ]),
+    entities: _rowsToCsv(entities, ["entity_id", "EntityType"]),
+    corr: _rowsToCsv(corr, ["event_id", "entity_id"]),
+    df: _rowsToCsv(df, ["source_event_id", "target_event_id", "entity_id", "EntityType"]),
+  };
+}
+
+function _readXesAttributes(node) {
+  const attrs = {};
+  [...(node?.children ?? [])].forEach(child => {
+    const tag = child.tagName?.toLowerCase();
+    if (tag === "event" || tag === "trace") return;
+    const key = child.getAttribute("key");
+    if (!key) return;
+    const normalized = _normalizeXesAttrKey(key);
+    attrs[normalized] = child.getAttribute("value") ?? "";
+  });
+  return attrs;
+}
+
+function _normalizeXesAttrKey(key) {
+  return String(key ?? "")
+    .replaceAll(":", "_")
+    .replaceAll(" ", "_")
+    .replaceAll("-", "_")
+    .replaceAll(".", "");
+}
+
+function _resolveXesPoId(traceAttrs, caseId) {
+  const directPo = traceAttrs.Purchasing_Document || traceAttrs.case_Purchasing_Document || traceAttrs.po_id;
+  if (directPo) return String(directPo);
+  const caseText = String(caseId ?? "");
+  if (caseText.includes("_")) {
+    const [prefix] = caseText.split(/_(?=[^_]+$)/);
+    if (prefix) return prefix;
+  }
+  return caseText || "PO_1";
+}
+
+function _normalizeXesTimestamp(rawValue, traceIndex, eventIndex) {
+  const parsed = new Date(rawValue ?? "");
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  return new Date(Date.UTC(2000, 0, 1, 0, traceIndex, eventIndex)).toISOString();
+}
+
+function _buildSequentialDfRows(events, groupKey, entityType) {
+  const rows = [];
+  const groups = _groupBy(events, event => event[groupKey]);
+  Object.entries(groups).forEach(([entityId, group]) => {
+    const ordered = [...group].sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime() ||
+      a.event_id.localeCompare(b.event_id)
+    );
+    for (let i = 0; i < ordered.length - 1; i++) {
+      rows.push({
+        source_event_id: ordered[i].event_id,
+        target_event_id: ordered[i + 1].event_id,
+        entity_id: entityId,
+        EntityType: entityType,
+      });
+    }
+  });
+  return rows;
+}
+
+function _rowsToCsv(rows, headers) {
+  const lines = [headers.join(",")];
+  rows.forEach(row => {
+    lines.push(headers.map(header => _csvEscape(row?.[header] ?? "")).join(","));
+  });
+  return lines.join("\n");
+}
+
+function _csvEscape(value) {
+  const text = String(value ?? "");
+  if (!/[",\n]/.test(text)) return text;
+  return `"${text.replaceAll("\"", "\"\"")}"`;
 }
 
 function _buildPoSummaries(poList, eventsByPo, itemsByPo) {
@@ -736,6 +1161,108 @@ function _countBy(items, getKey) {
     acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, {});
+}
+
+function _collectItemSequences(filters = {}) {
+  const scopedItemIds = filters.itemIds ? new Set(filters.itemIds) : null;
+  const itemIds = [...new Set([
+    ...Object.keys(store.eventsByItem ?? {}),
+    ...Object.keys(store.dfItemByEntity ?? {}),
+  ])]
+    .filter(entityId => !scopedItemIds || scopedItemIds.has(entityId))
+    .sort();
+
+  return itemIds.map(entityId => {
+    const events = [...(store.eventsByItem[entityId] ?? [])].sort(_compareEvents);
+    if (!events.length) return null;
+
+    const evById = Object.fromEntries(events.map(event => [event.event_id, event]));
+    const edges = (store.dfItemByEntity[entityId] ?? [])
+      .filter(edge => evById[edge.source] && evById[edge.target]);
+    const traced = _traceEntityPath(events, edges, evById);
+    const sequence = traced.eventIds
+      .map(eventId => evById[eventId]?.activity)
+      .filter(Boolean);
+
+    if (!_sequencePassesActivityFilter(sequence, filters.activities)) return null;
+
+    return {
+      entityId,
+      poId: events[0]?.po_id ?? null,
+      sequence,
+      eventIds: traced.eventIds,
+    };
+  }).filter(entry => entry && entry.sequence.length > 0);
+}
+
+function _sequencePassesActivityFilter(sequence, activities) {
+  if (!activities) return true;
+  return (sequence ?? []).every(activity => activities.has(activity));
+}
+
+function _traceEntityPath(events, edges, evById) {
+  const predecessorIds = {};
+  const successorIds = {};
+  const nodeIds = new Set(events.map(event => event.event_id));
+
+  edges.forEach(edge => {
+    nodeIds.add(edge.source);
+    nodeIds.add(edge.target);
+    if (!successorIds[edge.source]) successorIds[edge.source] = [];
+    if (!predecessorIds[edge.target]) predecessorIds[edge.target] = [];
+    successorIds[edge.source].push(edge.target);
+    predecessorIds[edge.target].push(edge.source);
+  });
+
+  const nodes = [...nodeIds].filter(eventId => evById[eventId]).sort(_compareEventIds(evById));
+  const starts = nodes.filter(eventId => (predecessorIds[eventId] ?? []).length === 0);
+  const orderedStarts = (starts.length ? starts : nodes).sort(_compareEventIds(evById));
+  const visited = new Set();
+  const orderedEventIds = [];
+  const queue = [...orderedStarts];
+
+  while (queue.length) {
+    let current = queue.shift();
+    while (current && !visited.has(current)) {
+      orderedEventIds.push(current);
+      visited.add(current);
+      const nextIds = [...new Set(successorIds[current] ?? [])]
+        .filter(eventId => !visited.has(eventId))
+        .sort(_compareEventIds(evById));
+      if (nextIds.length <= 1) {
+        current = nextIds[0] ?? null;
+        continue;
+      }
+      queue.unshift(...nextIds.slice(1));
+      current = nextIds[0];
+    }
+  }
+
+  nodes.forEach(eventId => {
+    if (!visited.has(eventId)) orderedEventIds.push(eventId);
+  });
+
+  return { eventIds: orderedEventIds };
+}
+
+function _compareEvents(a, b) {
+  return (a?.date?.getTime?.() ?? 0) - (b?.date?.getTime?.() ?? 0) ||
+    String(a?.event_id ?? "").localeCompare(String(b?.event_id ?? ""));
+}
+
+function _compareEventIds(evById) {
+  return (a, b) => _compareEvents(evById[a], evById[b]);
+}
+
+function _medianNumber(values) {
+  const numbers = [...(values ?? [])]
+    .filter(value => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (!numbers.length) return 0;
+  const mid = Math.floor(numbers.length / 2);
+  return numbers.length % 2 === 0
+    ? (numbers[mid - 1] + numbers[mid]) / 2
+    : numbers[mid];
 }
 
 function _caseCenterTime(firstDate, lastDate) {

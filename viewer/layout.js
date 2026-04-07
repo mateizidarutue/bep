@@ -39,8 +39,12 @@ const MIN_EVENT_SPACING = 22;
 const MIN_RESOURCE_SPACING = 46;
 const HOUR_MS = 1000 * 60 * 60;
 
-const OVERVIEW_PAD_X = 80;
-const OVERVIEW_PAD_Y = 70;
+const OVERVIEW_PAD_X = 32;
+const OVERVIEW_PAD_Y = 26;
+const VARIANT_HEADER_H = 34;
+const VARIANT_ROW_GAP = 8;
+const VARIANT_DFG_GAP = 34;
+const VARIANT_DFG_H = 200;
 const COMMUNITY_GAP = 36;
 const COMMUNITY_SPIRAL_STEP = 18;
 const COMMUNITY_SPIRAL_TURNS = Math.PI * (3 - Math.sqrt(5));
@@ -52,8 +56,51 @@ const FOCUS_RESOURCE_LIMIT = 8;
 const FOCUS_ATTR_LIMIT = 8;
 
 export function computeLayout(graphs, expanded, width, options = {}) {
-  if (graphs.length === 1 && graphs[0]?.isOverviewNetwork) {
-    return _layoutOverviewNetwork(graphs[0], width);
+  if (graphs.length === 1 && graphs[0]?.isVariantOverview) {
+    const viewportHeight = options.viewportHeight ?? 760;
+    const rowCount = Math.max(graphs[0]?.variants?.length ?? 0, 1);
+    const dfInnerHeight = options.dfHeight
+      ?? _clampNumber(Math.round(viewportHeight * (rowCount > 8 ? 0.21 : 0.24)), 150, VARIANT_DFG_H);
+    const variantLayout = computeVariantLayout(graphs[0], width, {
+      activityColorByName: options.activityColorByName,
+      rowHeight: options.variantRowHeight,
+      viewportHeight,
+      dfgHeight: dfInnerHeight,
+    });
+    const dfInnerWidth = Math.max(width - OVERVIEW_PAD_X * 2, 220);
+    const rawDfLayout = computeDfGraphLayout(graphs[0].dfGraph ?? { nodes: [], edges: [] }, dfInnerWidth, dfInnerHeight);
+    const dfOffsetX = OVERVIEW_PAD_X;
+    const dfOffsetY = variantLayout.totalHeight + VARIANT_DFG_GAP;
+
+    return {
+      isVariantOverview: true,
+      totalHeight: dfOffsetY + dfInnerHeight + OVERVIEW_PAD_Y,
+      variantOverview: {
+        variantLayout,
+        variantData: graphs[0],
+        dfLayout: {
+          ...rawDfLayout,
+          x: dfOffsetX,
+          y: dfOffsetY,
+          width: dfInnerWidth,
+          height: dfInnerHeight,
+          nodes: rawDfLayout.nodes.map(node => ({
+            ...node,
+            x: node.x + dfOffsetX,
+            y: node.y + dfOffsetY,
+          })),
+          edges: rawDfLayout.edges.map(edge => ({
+            ...edge,
+            x1: edge.x1 + dfOffsetX,
+            y1: edge.y1 + dfOffsetY,
+            x2: edge.x2 + dfOffsetX,
+            y2: edge.y2 + dfOffsetY,
+            cx: edge.cx + dfOffsetX,
+            cy: edge.cy + dfOffsetY,
+          })),
+        },
+      },
+    };
   }
 
   const timelineW = Math.max(width - TIMELINE_X0 - TIMELINE_PAD_R, 180);
@@ -70,6 +117,182 @@ export function computeLayout(graphs, expanded, width, options = {}) {
     totalHeight: curY,
     patterns: poBlocks[0]?.patterns ?? { dominantPattern: [], entityPatterns: {} },
     summary: _summarizeFocusBlocks(poBlocks),
+  };
+}
+
+function _clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function computeVariantLayout(variantData, width, options = {}) {
+  const variants = variantData?.variants ?? [];
+  const viewportHeight = options.viewportHeight ?? 760;
+  const leftPad = OVERVIEW_PAD_X;
+  const rightPad = OVERVIEW_PAD_X;
+  const rowWidth = Math.max(width - leftPad - rightPad, 320);
+  const rowX = leftPad;
+  const headerY = OVERVIEW_PAD_Y;
+  const baseY = headerY + VARIANT_HEADER_H;
+  const activityColorByName = options.activityColorByName ?? {};
+  const rowCount = Math.max(variants.length, 1);
+  const gapTotal = Math.max(variants.length - 1, 0) * VARIANT_ROW_GAP;
+  const dfgHeight = options.dfgHeight ?? VARIANT_DFG_H;
+  const availableRowsHeight = Math.max(
+    viewportHeight - (OVERVIEW_PAD_Y * 2 + VARIANT_HEADER_H + dfgHeight + VARIANT_DFG_GAP + 16),
+    rowCount * 32 + gapTotal,
+  );
+  const rowHeight = options.rowHeight ?? _clampNumber(
+    Math.floor((availableRowsHeight - gapTotal) / rowCount),
+    32,
+    64,
+  );
+  const chipHeight = _clampNumber(rowHeight - 14, 22, 34);
+  const badgeAreaWidth = _clampNumber(Math.round(rowHeight * 1.75), 72, 98);
+  const badgeWidth = _clampNumber(Math.round(rowHeight * 1.15), 44, 58);
+  const badgeHeight = _clampNumber(Math.round(chipHeight + 6), 24, 34);
+  const chipGap = _clampNumber(Math.round(rowHeight * 0.22), 6, 14);
+  const percentZoneWidth = 54;
+  const chipStartX = rowX + badgeAreaWidth;
+  const chipRegionWidth = Math.max(rowWidth - badgeAreaWidth - percentZoneWidth - 18, 120);
+  let maxChipWidth = 80;
+
+  const rows = variants.map((variant, index) => {
+    const y = baseY + index * (rowHeight + VARIANT_ROW_GAP);
+    const badgeY = y + rowHeight / 2;
+    const sequence = variant.sequence ?? [];
+    const slotCount = Math.max(sequence.length, 1);
+    const slotWidth = chipRegionWidth / slotCount;
+    const fillRatio = slotCount > 7 ? 0.8 : slotCount > 5 ? 0.84 : 0.88;
+    const badgeRectX = rowX + 14;
+    const badgeRectY = badgeY - badgeHeight / 2;
+
+    const chips = sequence.map((activity, activityIndex) => {
+      const naturalWidth = Math.max(
+        chipHeight * 2.25,
+        Math.ceil(chipHeight * 0.9 + String(activity ?? "").length * (chipHeight > 28 ? 6.1 : 5.6)),
+      );
+      const maxSlotWidth = Math.max(slotWidth - chipGap, 56);
+      const fillWidth = slotWidth * fillRatio;
+      const chipWidth = Math.max(
+        56,
+        Math.min(maxSlotWidth, Math.max(fillWidth, Math.min(naturalWidth, maxSlotWidth))),
+      );
+      maxChipWidth = Math.max(maxChipWidth, chipWidth);
+      const x = chipStartX + activityIndex * slotWidth + Math.max((slotWidth - chipWidth) / 2, 0);
+      const chip = {
+        activity,
+        x,
+        y: y + (rowHeight - chipHeight) / 2,
+        w: chipWidth,
+        h: chipHeight,
+        color: activityColorByName[activity] ?? "#64748b",
+      };
+      return chip;
+    });
+
+    return {
+      variant,
+      x: rowX,
+      y,
+      w: rowWidth,
+      h: rowHeight,
+      chips,
+      badgeX: badgeRectX + badgeWidth / 2,
+      badgeY,
+      badgeW: badgeWidth,
+      badgeH: badgeHeight,
+      badgeRectX,
+      badgeRectY,
+      chipStartX,
+      chipEndX: chipStartX + chipRegionWidth,
+      percentX: rowX + rowWidth - 10,
+      percentY: badgeY,
+    };
+  });
+
+  const rowsBottom = rows.at(-1)?.y ?? baseY;
+  const totalHeight = rows.length
+    ? rowsBottom + rowHeight + 10
+    : baseY + 12;
+
+  return {
+    rows,
+    totalHeight,
+    chipWidth: maxChipWidth,
+    headerX: leftPad,
+    headerY,
+    summaryX: rowX + rowWidth,
+    rowHeight,
+    badgeWidth,
+    rowX,
+    rowWidth,
+    dfgHeight,
+  };
+}
+
+export function computeDfGraphLayout(dfGraph, width, height) {
+  const nodes = [...(dfGraph?.nodes ?? [])];
+  const edges = [...(dfGraph?.edges ?? [])];
+  if (!nodes.length) return { nodes: [], edges: [] };
+
+  const topPad = 26;
+  const sidePad = 36;
+  const usableWidth = Math.max(width - sidePad * 2, 1);
+  const usableHeight = Math.max(height - topPad * 2, 1);
+  const laneCount = Math.min(3, Math.max(1, Math.ceil(nodes.length / 3)));
+  const laneGap = laneCount > 1 ? usableHeight / (laneCount - 1) : 0;
+  const outDegreeById = {};
+  const inDegreeById = {};
+
+  edges.forEach(edge => {
+    outDegreeById[edge.source] = (outDegreeById[edge.source] ?? 0) + 1;
+    inDegreeById[edge.target] = (inDegreeById[edge.target] ?? 0) + 1;
+  });
+
+  const orderedNodes = [...nodes].sort((a, b) =>
+    (a.avgIndex ?? Infinity) - (b.avgIndex ?? Infinity) ||
+    (inDegreeById[a.id] ?? 0) - (inDegreeById[b.id] ?? 0) ||
+    b.count - a.count ||
+    a.label.localeCompare(b.label)
+  );
+  const xGap = orderedNodes.length > 1 ? usableWidth / (orderedNodes.length - 1) : 0;
+
+  const laidOutNodes = orderedNodes.map((node, index) => {
+    const lane = laneCount === 1 ? 0 : index % laneCount;
+    const laneOffset = laneCount === 1
+      ? usableHeight / 2
+      : lane * laneGap;
+    return {
+      ...node,
+      x: sidePad + index * xGap,
+      y: topPad + laneOffset,
+    };
+  });
+  const posById = Object.fromEntries(laidOutNodes.map(node => [node.id, node]));
+
+  const laidOutEdges = edges
+    .filter(edge => posById[edge.source] && posById[edge.target])
+    .map(edge => {
+      const source = posById[edge.source];
+      const target = posById[edge.target];
+      const dx = target.x - source.x;
+      const dy = target.y - source.y;
+      const direction = dx >= 0 ? 1 : -1;
+      const curve = Math.max(18, Math.min(52, Math.abs(dx) * 0.18 + Math.abs(dy) * 0.2));
+      return {
+        ...edge,
+        x1: source.x,
+        y1: source.y,
+        x2: target.x,
+        y2: target.y,
+        cx: (source.x + target.x) / 2,
+        cy: (source.y + target.y) / 2 - curve * direction * 0.12,
+      };
+    });
+
+  return {
+    nodes: laidOutNodes,
+    edges: laidOutEdges,
   };
 }
 
@@ -379,12 +602,20 @@ function _layoutBlock(graph, expanded, startY, timelineW, options = {}) {
   const eventsByItem = _groupBy(allEvents, e => e.poitem_id);
   const dfItemByEntity = _groupBy(allDfItem, edge => edge.entityId);
   const patternAnalysis = _analyzeEntityPatterns(allItems, eventsByItem, dfItemByEntity, evById);
-  const items = options.showDeviantsOnly
+  const baseItems = options.showDeviantsOnly
     ? allItems.filter(item => !(patternAnalysis.entityPatterns[item]?.followsDominant ?? true))
     : visibleItems;
-  const displayedDfItemCount = items.reduce((sum, item) => sum + (dfItemByEntity[item]?.length ?? 0), 0);
+  const syncOnlyItems = options.showSyncOnly
+    ? _collectSyncItems(baseItems, patternAnalysis)
+    : new Set();
+  const items = options.showSyncOnly
+    ? baseItems.filter(item => syncOnlyItems.has(item))
+    : baseItems;
+  const effectiveExpanded = options.showSyncOnly
+    ? new Set([...expanded, ...items])
+    : expanded;
 
-  const rowHeights = items.map(item => expanded.has(item) ? ROW_H_EXPANDED : ROW_H_COLLAPSED);
+  const rowHeights = items.map(item => effectiveExpanded.has(item) ? ROW_H_EXPANDED : ROW_H_COLLAPSED);
   const contentH = rowHeights.reduce((a, b) => a + b, 0);
   const totalHeight = BLOCK_PAD_TOP + contentH + BLOCK_PAD_BOT;
   const poMidY = startY + BLOCK_PAD_TOP + contentH / 2;
@@ -397,7 +628,7 @@ function _layoutBlock(graph, expanded, startY, timelineW, options = {}) {
     const h = rowHeights[i];
     const midY = rowY + h / 2;
     const color = ITEM_COLORS[i % ITEM_COLORS.length];
-    const isExp = expanded.has(item);
+    const isExp = effectiveExpanded.has(item);
     const itemAttrs = itemAttrsById?.[item] ?? {};
     const entityPattern = patternAnalysis.entityPatterns[item] ?? {
       sequence: [],
@@ -459,51 +690,7 @@ function _layoutBlock(graph, expanded, startY, timelineW, options = {}) {
           };
         });
 
-      const resY = rowY + 42;
-      const byResource = {};
-      timelineNodes.filter(n => _hasResourceValue(n.org_resource)).forEach(n => {
-        if (!byResource[n.org_resource]) byResource[n.org_resource] = [];
-        byResource[n.org_resource].push(n);
-      });
-
-      resourceNodes = Object.entries(byResource)
-        .map(([resource, nodes]) => ({
-          id: resource,
-          label: resource,
-          shortLabel: _shortResource(resource),
-          count: nodes.length,
-          color: nodes[0].resourceColor,
-          x: nodes.reduce((sum, n) => sum + n.x, 0) / nodes.length,
-          y: resY,
-          nodes,
-        }))
-        .sort((a, b) => a.x - b.x);
-
-      for (let j = 1; j < resourceNodes.length; j++) {
-        if (resourceNodes[j].x - resourceNodes[j - 1].x < MIN_RESOURCE_SPACING) {
-          resourceNodes[j].x = resourceNodes[j - 1].x + MIN_RESOURCE_SPACING;
-        }
-      }
-      for (let j = resourceNodes.length - 2; j >= 0; j--) {
-        resourceNodes[j].x = Math.min(resourceNodes[j].x, resourceNodes[j + 1].x - MIN_RESOURCE_SPACING);
-      }
-
-      const maxX = TIMELINE_X0 + timelineW;
-      resourceNodes = resourceNodes.map(node => ({
-        ...node,
-        x: Math.max(TIMELINE_X0 + 10, Math.min(node.x, maxX)),
-      }));
-
-      resourceLinks = resourceNodes.flatMap(node =>
-        node.nodes.map(n => ({
-          id: `res-${node.id}-${n.id}`,
-          x1: node.x,
-          y1: node.y + 10,
-          x2: n.x,
-          y2: midY - EVENT_R - 2,
-          color: node.color,
-        }))
-      );
+      ({ resourceNodes, resourceLinks } = _buildResourceOverlay(timelineNodes, rowY, midY, TIMELINE_X0 + timelineW));
 
       const lastTimelineX = timelineNodes.at(-1)?.x ?? TIMELINE_X0;
       const lastResourceX = resourceNodes.reduce((max, node) => Math.max(max, node.x + 12), TIMELINE_X0);
@@ -528,6 +715,8 @@ function _layoutBlock(graph, expanded, startY, timelineW, options = {}) {
       itemAttrs,
       evCount,
       dateRange,
+      syncEventCount: 0,
+      showSyncOnly: Boolean(options.showSyncOnly),
       laneX2,
       corrEdge: { x1: ITEM_X, y1: midY, x2: PO_X, y2: poMidY },
     });
@@ -564,7 +753,14 @@ function _layoutBlock(graph, expanded, startY, timelineW, options = {}) {
     });
 
   _annotateSyncEvents(itemRows, patternAnalysis, displayedItemSet);
+  itemRows.forEach(row => {
+    row.syncEventCount = row.timelineNodes.filter(node => node.isSyncEvent).length;
+  });
+  if (options.showSyncOnly) {
+    _pruneRowsToSyncEvents(itemRows);
+  }
   const bottleneckThresholdHours = _annotateBottlenecks(itemRows);
+  const displayedDfItemCount = itemRows.reduce((sum, row) => sum + row.dfItemEdges.length, 0);
 
   return {
     po,
@@ -736,6 +932,87 @@ function _annotateSyncEvents(itemRows, patternAnalysis, displayedItemSet) {
   });
 }
 
+function _collectSyncItems(items, patternAnalysis) {
+  const scopedItems = new Set(items ?? []);
+  const syncItems = new Set();
+
+  (items ?? []).forEach(item => {
+    const entry = patternAnalysis.entityPatterns[item];
+    const hasSyncEvent = (entry?.eventIds ?? []).some(eventId => {
+      const memberships = [...(patternAnalysis.eventMemberships.get(eventId) ?? new Set())]
+        .filter(entityId => scopedItems.has(entityId));
+      return memberships.length > 1;
+    });
+    if (hasSyncEvent) syncItems.add(item);
+  });
+
+  return syncItems;
+}
+
+function _pruneRowsToSyncEvents(itemRows) {
+  itemRows.forEach(row => {
+    const syncNodes = row.timelineNodes.filter(node => node.isSyncEvent);
+    const syncEventIds = new Set(syncNodes.map(node => node.id));
+    row.timelineNodes = syncNodes;
+    row.dfItemEdges = row.dfItemEdges.filter(edge =>
+      syncEventIds.has(edge.sourceId) || syncEventIds.has(edge.targetId)
+    );
+    const maxTimelineX = syncNodes.reduce((max, node) => Math.max(max, node.x), TIMELINE_X0);
+    const overlay = _buildResourceOverlay(syncNodes, row.rowY, row.midY, maxTimelineX);
+    row.resourceNodes = overlay.resourceNodes;
+    row.resourceLinks = overlay.resourceLinks;
+  });
+}
+
+function _buildResourceOverlay(timelineNodes, rowY, midY, maxX) {
+  const resY = rowY + 42;
+  const byResource = {};
+  timelineNodes.filter(n => _hasResourceValue(n.org_resource)).forEach(n => {
+    if (!byResource[n.org_resource]) byResource[n.org_resource] = [];
+    byResource[n.org_resource].push(n);
+  });
+
+  let resourceNodes = Object.entries(byResource)
+    .map(([resource, nodes]) => ({
+      id: resource,
+      label: resource,
+      shortLabel: _shortResource(resource),
+      count: nodes.length,
+      color: nodes[0].resourceColor,
+      x: nodes.reduce((sum, n) => sum + n.x, 0) / nodes.length,
+      y: resY,
+      nodes,
+    }))
+    .sort((a, b) => a.x - b.x);
+
+  for (let j = 1; j < resourceNodes.length; j++) {
+    if (resourceNodes[j].x - resourceNodes[j - 1].x < MIN_RESOURCE_SPACING) {
+      resourceNodes[j].x = resourceNodes[j - 1].x + MIN_RESOURCE_SPACING;
+    }
+  }
+  for (let j = resourceNodes.length - 2; j >= 0; j--) {
+    resourceNodes[j].x = Math.min(resourceNodes[j].x, resourceNodes[j + 1].x - MIN_RESOURCE_SPACING);
+  }
+
+  resourceNodes = resourceNodes.map(node => ({
+    ...node,
+    x: Math.max(TIMELINE_X0 + 10, Math.min(node.x, maxX)),
+  }));
+
+  const resourceLinks = resourceNodes.flatMap(node =>
+    node.nodes.map(n => ({
+      id: `res-${node.id}-${n.id}`,
+      x1: node.x,
+      y1: node.y + 10,
+      x2: n.x,
+      y2: midY - EVENT_R - 2,
+      color: node.color,
+    }))
+  );
+
+  return { resourceNodes, resourceLinks };
+}
+
 function _annotateBottlenecks(itemRows) {
   const edges = itemRows.flatMap(row => row.dfItemEdges).filter(edge => Number.isFinite(edge.gapHours));
   const threshold = _quantile(edges.map(edge => edge.gapHours), 0.75);
@@ -754,6 +1031,8 @@ function _summarizeFocusBlocks(blocks) {
     summary.shownItems += block.itemRows.length;
     summary.totalEvents += block.meta?.totalEvents ?? 0;
     summary.filteredEvents += block.itemRows.reduce((sum, row) => sum + row.evCount, 0);
+    summary.syncItemCount += block.itemRows.filter(row => (row.syncEventCount ?? 0) > 0).length;
+    summary.syncEventCount += block.itemRows.reduce((sum, row) => sum + (row.syncEventCount ?? 0), 0);
     summary.dfItemCount += block.displayedDfItemCount ?? block.itemRows.reduce((sum, row) => sum + row.dfItemEdges.length, 0);
     summary.dfPoCount += block.dfPoEdges.length;
     return summary;
@@ -762,6 +1041,8 @@ function _summarizeFocusBlocks(blocks) {
     shownItems: 0,
     totalEvents: 0,
     filteredEvents: 0,
+    syncItemCount: 0,
+    syncEventCount: 0,
     dfItemCount: 0,
     dfPoCount: 0,
   });

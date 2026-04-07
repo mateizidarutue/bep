@@ -1,5 +1,5 @@
 # Loading BPIC 2019 EKG into Neo4j
-![alt text](image.png)
+
 ## Prerequisites
 
 - Neo4j Desktop (≥ 4.x) with APOC plugin
@@ -27,7 +27,7 @@ MERGE (:Log {id: row.log_id});
 
 ## 3 — Event nodes
 
-```cypher
+```cypher![alt text](image.png)
 LOAD CSV WITH HEADERS FROM '<BASE_URL>/events.csv' AS row
 CREATE (:Event {
     id:        row.event_id,

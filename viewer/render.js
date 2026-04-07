@@ -32,6 +32,8 @@ const FIT_PAD_X = 52;
 const FIT_PAD_Y = 44;
 const FIT_MAX_SCALE = 1.65;
 const FIT_READABLE_MIN_SCALE = 0.28;
+const ZOOM_MIN_SCALE = 0.05;
+const ZOOM_MAX_SCALE = 6;
 const CAMERA_EASE_MS = 420;
 const COMMUNITY_PALETTE = [
   [37, 99, 235],
@@ -46,13 +48,13 @@ const COMMUNITY_PALETTE = [
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-export function init(svgId, onTooltipShow, onTooltipHide, onItemExpand, onPoSelect, onCommunitySelect) {
+export function init(svgId, onTooltipShow, onTooltipHide, onItemExpand, onPoSelect, onVariantSelect) {
   svg   = d3.select(`#${svgId}`);
   gRoot = svg.append("g").attr("class", "root");
   _currentTransform = d3.zoomIdentity;
   _addMarkers(svg.append("defs"));
   zoom = d3.zoom()
-    .scaleExtent([0.05, 6])
+    .scaleExtent([ZOOM_MIN_SCALE, ZOOM_MAX_SCALE])
     .wheelDelta(_wheelDelta)
     .on("zoom", e => {
       _currentTransform = e.transform;
@@ -64,7 +66,7 @@ export function init(svgId, onTooltipShow, onTooltipHide, onItemExpand, onPoSele
     if (event.target === svg.node()) _clearSelection();
   });
 
-  _cb = { onTooltipShow, onTooltipHide, onItemExpand, onPoSelect, onCommunitySelect };
+  _cb = { onTooltipShow, onTooltipHide, onItemExpand, onPoSelect, onVariantSelect };
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -75,7 +77,19 @@ export function draw(graphs, expanded, options = {}) {
   _expanded = expanded;
 
   const w      = svg.node().clientWidth;
-  const layout = computeLayout(graphs, expanded, w, options.layoutFilters ?? {});
+  const isVariantOverview = graphs.length === 1 && graphs[0]?.isVariantOverview;
+  const layout = computeLayout(
+    graphs,
+    expanded,
+    w,
+    isVariantOverview
+      ? {
+          ...(options.layoutFilters ?? {}),
+          activityColorByName: options.activityColorByName,
+          viewportHeight: svg.node().clientHeight,
+        }
+      : (options.layoutFilters ?? {}),
+  );
 
   gRoot.selectAll("*").remove();
 
@@ -89,8 +103,15 @@ export function draw(graphs, expanded, options = {}) {
   const lNodes  = gRoot.append("g").attr("class", "l-nodes");
   const lLabels = gRoot.append("g").attr("class", "l-labels");
 
-  if (layout.overviewNetwork) {
-    _drawOverviewNetwork(layout.network, lBg, lMeta, lNodes, lLabels);
+  if (layout.isVariantOverview) {
+    _drawVariantOverview(
+      layout.variantOverview.variantLayout,
+      layout.variantOverview.dfLayout,
+      layout.variantOverview.variantData,
+      lBg,
+      lNodes,
+      lLabels,
+    );
   } else {
     layout.poBlocks.forEach(block =>
       _drawBlock(block, lBg, lDfPo, lCorr, lRes, lDfItem, lNodes, lLabels)
@@ -105,6 +126,7 @@ export function draw(graphs, expanded, options = {}) {
     fitToView(layout.totalHeight, {
       animate: options.animate ?? true,
       minScale: options.minScale,
+      ...(options.fitOptions ?? {}),
     });
   } else {
     gRoot.attr("transform", _currentTransform ?? d3.zoomIdentity);
@@ -124,8 +146,9 @@ export function setOpacity(key, val) {
 
 export function fitToView(totalHeight, options = {}) {
   if (!svg) return;
-  const transform = _computeFitTransform(totalHeight, options.minScale);
+  const transform = _computeFitTransform(totalHeight, options);
   if (!transform) return;
+  _setZoomScaleExtent(options.lockMinScale ? transform.k : ZOOM_MIN_SCALE);
   _applyTransform(transform, options.animate ?? true);
 }
 
@@ -156,6 +179,243 @@ export function zoomBy(factor, options = {}) {
 }
 
 // ── Draw one PO block ─────────────────────────────────────────────────────────
+
+function _drawVariantOverview(variantLayout, dfLayout, variantData, lBg, lNodes, lLabels) {
+  const rows = variantLayout?.rows ?? [];
+  const summaryX = variantLayout?.summaryX ?? ((variantLayout?.rowX ?? 56) + (variantLayout?.rowWidth ?? 320));
+
+  lLabels.append("text")
+    .attr("x", variantLayout?.headerX ?? 56)
+    .attr("y", (variantLayout?.headerY ?? 40) + 6)
+    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-size", "10px")
+    .attr("font-weight", "700")
+    .attr("letter-spacing", "0.12em")
+    .attr("fill", "var(--text-dim)")
+    .text("PROCESS VARIANTS");
+
+  lLabels.append("text")
+    .attr("x", variantLayout?.headerX ?? 56)
+    .attr("y", (variantLayout?.headerY ?? 40) + 24)
+    .attr("font-family", "Syne, sans-serif")
+    .attr("font-size", "18px")
+    .attr("font-weight", "500")
+    .attr("fill", "var(--text)")
+    .text("Process Variants");
+
+  lLabels.append("text")
+    .attr("x", summaryX)
+    .attr("y", (variantLayout?.headerY ?? 40) + 24)
+    .attr("text-anchor", "end")
+    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-size", "10px")
+    .attr("fill", "var(--text-dim)")
+    .text(`${variantData?.totalInstances ?? 0} instances  •  ${variantData?.variantCount ?? 0} variants`);
+
+  if (!rows.length) {
+    lLabels.append("text")
+      .attr("x", variantLayout?.rowX ?? 56)
+      .attr("y", (variantLayout?.totalHeight ?? 88) - 8)
+      .attr("font-family", "JetBrains Mono, monospace")
+      .attr("font-size", "10px")
+      .attr("fill", "var(--text-dim)")
+      .text("No variants match the current activity filter.");
+  } else {
+    rows.forEach((row, index) => {
+      const bgRect = lBg.append("rect")
+        .attr("x", row.x)
+        .attr("y", row.y)
+        .attr("width", row.w)
+        .attr("height", row.h)
+        .attr("rx", 12)
+        .attr("fill", row.variant?.isdominant ? "rgba(79,142,247,0.10)" : "rgba(255,255,255,0.02)")
+        .attr("stroke", row.variant?.isdominant ? "rgba(79,142,247,0.28)" : "rgba(79,142,247,0.08)")
+        .attr("stroke-width", row.variant?.isdominant ? 1.2 : 1)
+        .style("cursor", "pointer");
+
+      const connectorStroke = row.variant?.isdominant ? "rgba(79,142,247,0.30)" : "rgba(79,142,247,0.18)";
+      row.chips.slice(0, -1).forEach((chip, chipIndex) => {
+        const nextChip = row.chips[chipIndex + 1];
+        lBg.append("line")
+          .attr("x1", chip.x + chip.w)
+          .attr("y1", chip.y + chip.h / 2)
+          .attr("x2", nextChip.x)
+          .attr("y2", nextChip.y + nextChip.h / 2)
+          .attr("stroke", connectorStroke)
+          .attr("stroke-width", row.variant?.isdominant ? 1.5 : 1)
+          .attr("stroke-linecap", "round");
+      });
+
+      const rowG = lNodes.append("g")
+        .attr("class", "variant-row")
+        .style("cursor", "pointer");
+
+      const setHover = active => {
+        bgRect
+          .attr("fill", active
+            ? (row.variant?.isdominant ? "rgba(79,142,247,0.13)" : "rgba(79,142,247,0.06)")
+            : (row.variant?.isdominant ? "rgba(79,142,247,0.10)" : "rgba(255,255,255,0.02)"))
+          .attr("stroke", active
+            ? "rgba(79,142,247,0.36)"
+            : (row.variant?.isdominant ? "rgba(79,142,247,0.28)" : "rgba(79,142,247,0.08)"));
+      };
+      const clickVariant = () => _cb.onVariantSelect?.(row.variant?.instanceIds ?? []);
+      const moveVariant = ev => {
+        const sequencePreview = (row.variant?.sequence ?? []).join(" → ");
+        _cb.onTooltipShow(
+          `<div class="tip-title">Variant ${index + 1}</div>
+           <div class="tip-row">Instances: <b>${row.variant?.count ?? 0}</b></div>
+           <div class="tip-row">Share: <b>${_formatPercent(row.variant?.frequency ?? 0)}</b></div>
+           <div class="tip-row">Sequence: <b>${sequencePreview || "n/a"}</b></div>
+           <div class="tip-row" style="margin-top:5px;color:var(--col-po);font-size:10px">Click to focus instances of this variant</div>`,
+          ev.offsetX, ev.offsetY
+        );
+      };
+
+      [bgRect, rowG].forEach(target => {
+        target
+          .on("mouseenter", () => setHover(true))
+          .on("mouseleave", () => {
+            setHover(false);
+            _cb.onTooltipHide();
+          })
+          .on("mousemove", moveVariant)
+          .on("click", clickVariant);
+      });
+
+      rowG.append("rect")
+        .attr("x", row.badgeRectX)
+        .attr("y", row.badgeRectY)
+        .attr("width", row.badgeW)
+        .attr("height", row.badgeH)
+        .attr("rx", row.badgeH / 2)
+        .attr("fill", row.variant?.isdominant ? "rgba(79,142,247,0.18)" : "rgba(255,255,255,0.05)")
+        .attr("stroke", row.variant?.isdominant ? "rgba(79,142,247,0.34)" : "rgba(79,142,247,0.12)")
+        .attr("stroke-width", 1);
+
+      rowG.append("text")
+        .attr("x", row.badgeX)
+        .attr("y", row.badgeY + 4)
+        .attr("text-anchor", "middle")
+        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-size", "11px")
+        .attr("font-weight", "700")
+        .attr("fill", "var(--text)")
+        .text(row.variant?.count ?? 0);
+
+      if (row.variant?.isdominant) {
+        rowG.append("text")
+          .attr("x", Math.max(row.x + 6, row.badgeRectX - 12))
+          .attr("y", row.badgeY + 4)
+          .attr("font-family", "JetBrains Mono, monospace")
+          .attr("font-size", "13px")
+          .attr("fill", "#d4a73c")
+          .text("★");
+      }
+
+      const chipG = rowG.selectAll(null).data(row.chips).join("g")
+        .attr("transform", d => `translate(${d.x},${d.y})`);
+
+      chipG.append("rect")
+        .attr("width", d => d.w)
+        .attr("height", d => d.h)
+        .attr("rx", d => d.h / 2)
+        .attr("fill", d => _rgba(d.color, row.variant?.isdominant ? 0.28 : 0.2))
+        .attr("stroke", d => _rgba(d.color, row.variant?.isdominant ? 0.72 : 0.44))
+        .attr("stroke-width", 1.1);
+
+      chipG.append("text")
+        .attr("x", d => d.w / 2)
+        .attr("y", d => d.h / 2 + 3)
+        .attr("text-anchor", "middle")
+        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-size", d => Math.max(8, Math.min(10, d.h * 0.36)))
+        .attr("font-weight", "600")
+        .attr("fill", "var(--text)")
+        .text(d => _ellipsis(d.activity, Math.max(10, Math.floor((d.w - 18) / 6.4))));
+
+      rowG.append("text")
+        .attr("x", row.percentX)
+        .attr("y", row.percentY + 4)
+        .attr("text-anchor", "end")
+        .attr("font-family", "JetBrains Mono, monospace")
+        .attr("font-size", "10px")
+        .attr("fill", row.variant?.isdominant ? "var(--col-po)" : "var(--text-dim)")
+        .text(_formatPercent(row.variant?.frequency ?? 0));
+    });
+  }
+
+  lLabels.append("text")
+    .attr("x", dfLayout?.x ?? 56)
+    .attr("y", (dfLayout?.y ?? ((variantLayout?.totalHeight ?? 0) + 34)) - 10)
+    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-size", "10px")
+    .attr("font-weight", "700")
+    .attr("letter-spacing", "0.12em")
+    .attr("fill", "var(--text-dim)")
+    .text("ACTIVITY FLOW");
+
+  lBg.append("rect")
+    .attr("x", dfLayout?.x ?? 56)
+    .attr("y", dfLayout?.y ?? ((variantLayout?.totalHeight ?? 0) + 34))
+    .attr("width", dfLayout?.width ?? 240)
+    .attr("height", dfLayout?.height ?? 200)
+    .attr("rx", 16)
+    .attr("fill", "rgba(14,17,24,0.72)")
+    .attr("stroke", "rgba(79,142,247,0.10)")
+    .attr("stroke-width", 1);
+
+  const maxEdgeCount = Math.max(...(dfLayout?.edges ?? []).map(edge => edge.count), 1);
+  lBg.selectAll(null).data(dfLayout?.edges ?? []).join("path")
+    .attr("class", "variant-dfg-edge")
+    .attr("d", d => `M${d.x1},${d.y1} Q${d.cx},${d.cy} ${d.x2},${d.y2}`)
+    .attr("fill", "none")
+    .attr("stroke", "rgba(79,142,247,0.28)")
+    .attr("stroke-width", d => 1 + (d.count / maxEdgeCount) * 4)
+    .attr("stroke-linecap", "round")
+    .on("mousemove", (ev, d) => _cb.onTooltipShow(
+      `<div class="tip-title">Activity Flow</div>
+       <div class="tip-row">Transition: <b>${d.source} → ${d.target}</b></div>
+       <div class="tip-row">Count: <b>${d.count}</b></div>`,
+      ev.offsetX, ev.offsetY
+    ))
+    .on("mouseleave", _cb.onTooltipHide);
+
+  const maxNodeCount = Math.max(...(dfLayout?.nodes ?? []).map(node => node.count), 1);
+  const nodeG = lNodes.selectAll(null).data(dfLayout?.nodes ?? []).join("g")
+    .attr("transform", d => `translate(${d.x},${d.y})`)
+    .style("cursor", "default")
+    .on("mousemove", (ev, d) => _cb.onTooltipShow(
+      `<div class="tip-title">${d.label}</div>
+       <div class="tip-row">Occurrences: <b>${d.count}</b></div>`,
+      ev.offsetX, ev.offsetY
+    ))
+    .on("mouseleave", _cb.onTooltipHide);
+
+  nodeG.append("circle")
+    .attr("r", d => 8 + (d.count / maxNodeCount) * 10)
+    .attr("fill", "rgba(79,142,247,0.18)")
+    .attr("stroke", "rgba(79,142,247,0.48)")
+    .attr("stroke-width", 1.4);
+
+  nodeG.append("text")
+    .attr("text-anchor", "middle")
+    .attr("dy", "0.34em")
+    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-size", "8px")
+    .attr("font-weight", "700")
+    .attr("fill", "var(--text)")
+    .text(d => Math.round(d.count));
+
+  lLabels.selectAll(null).data(dfLayout?.nodes ?? []).join("text")
+    .attr("x", d => d.x)
+    .attr("y", d => d.y + 24)
+    .attr("text-anchor", "middle")
+    .attr("font-family", "JetBrains Mono, monospace")
+    .attr("font-size", "8px")
+    .attr("fill", "var(--text-dim)")
+    .text(d => _ellipsis(d.label, 16));
+}
 
 function _drawOverviewNetwork(network, lBg, lMeta, lNodes, lLabels) {
   const focusedCommunityId = network.meta?.focusCommunityId ?? null;
@@ -601,7 +861,7 @@ function _drawOverviewBlock(block, lBg, lCorr, lNodes, lLabels) {
 function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
   const { item, midY, rowY, h, color, isExp, corrEdge,
           timelineNodes, dfItemEdges, resourceNodes, resourceLinks,
-          itemAttrs, evCount, dateRange, laneX2, followsDominant } = row;
+          itemAttrs, evCount, dateRange, laneX2, followsDominant, syncEventCount, showSyncOnly } = row;
   const laneFill = followsDominant
     ? (isExp ? `${color}12` : "transparent")
     : (isExp ? "rgba(217,119,6,0.10)" : "rgba(217,119,6,0.04)");
@@ -645,6 +905,7 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
       `<div class="tip-title">${item}</div>
        <div class="tip-row">Type: <b>POItem</b></div>
        <div class="tip-row">Events: <b>${evCount}</b></div>
+       <div class="tip-row">Sync events: <b>${syncEventCount ?? 0}</b></div>
        <div class="tip-row">Range: <b>${dateRange}</b></div>
        <div class="tip-row">Dominant pattern: <b>${followsDominant ? "Yes" : "No"}</b></div>
        ${_tooltipRows(itemAttrs, ["Item_Type", "Item_Category", "Goods_Receipt", "GR_Based_Inv_Verif"])}
@@ -688,7 +949,7 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
       .attr("x", ITEM_X + ITEM_R + 12).attr("y", midY + 9)
       .attr("font-family", "JetBrains Mono, monospace")
       .attr("font-size", "9px").attr("fill", "var(--text-dim)")
-      .text(`${evCount} events · ${dateRange}`);
+      .text(syncEventCount ? `${evCount} events · ${syncEventCount} sync · ${dateRange}` : `${evCount} events · ${dateRange}`);
   } else {
     // Expanded: keep the annotation band compact and away from the timeline.
     lLabels.append("text")
@@ -701,7 +962,9 @@ function _drawItemRow(row, lBg, lCorr, lRes, lDfItem, lNodes, lLabels) {
       .attr("x", ITEM_X + ITEM_R + 14).attr("y", rowY + 18)
       .attr("font-family", "JetBrains Mono, monospace")
       .attr("font-size", "9px").attr("fill", "var(--text-dim)")
-      .text(`${evCount} ev • ${dateRange}`);
+      .text(showSyncOnly
+        ? `${syncEventCount ?? 0} sync • ${dateRange}`
+        : (syncEventCount ? `${evCount} ev • ${syncEventCount} sync • ${dateRange}` : `${evCount} ev • ${dateRange}`));
     _drawChipList(
       lLabels,
       _buildChips(itemAttrs, [
@@ -1155,27 +1418,32 @@ function _contentBounds(totalHeight) {
   return fallback;
 }
 
-function _computeFitTransform(totalHeight, minScale = FIT_READABLE_MIN_SCALE) {
+function _computeFitTransform(totalHeight, options = {}) {
+  const minScale = options.minScale ?? FIT_READABLE_MIN_SCALE;
   const bounds = _contentBounds(totalHeight);
   if (!bounds || !svg?.node()) return null;
 
   const viewportW = svg.node().clientWidth;
   const viewportH = svg.node().clientHeight;
-  const innerW = Math.max(viewportW - FIT_PAD_X * 2, 1);
-  const innerH = Math.max(viewportH - FIT_PAD_Y * 2, 1);
-  const fitScale = Math.min(
-    FIT_MAX_SCALE,
-    innerW / Math.max(bounds.width, 1),
-    innerH / Math.max(bounds.height, 1),
-  );
-  const scale = fitScale < minScale && bounds.height > viewportH
-    ? Math.min(minScale, innerW / Math.max(bounds.width, 1))
-    : fitScale;
+  const padX = options.padX ?? FIT_PAD_X;
+  const padY = options.padY ?? FIT_PAD_Y;
+  const innerW = Math.max(viewportW - padX * 2, 1);
+  const innerH = Math.max(viewportH - padY * 2, 1);
+  const widthScale = innerW / Math.max(bounds.width, 1);
+  const heightScale = innerH / Math.max(bounds.height, 1);
+  const fitScale = Math.min(FIT_MAX_SCALE, widthScale, heightScale);
+  const scale = options.preferWidth && bounds.height > viewportH
+    ? Math.min(FIT_MAX_SCALE, widthScale)
+    : (fitScale < minScale && bounds.height > viewportH
+        ? Math.min(minScale, widthScale)
+        : fitScale);
 
-  const centerX = bounds.x + bounds.width / 2;
-  const centerY = bounds.y + bounds.height / 2;
-  const tx = viewportW / 2 - centerX * scale;
-  const ty = viewportH / 2 - centerY * scale;
+  const tx = options.alignLeft
+    ? padX - bounds.x * scale
+    : viewportW / 2 - (bounds.x + bounds.width / 2) * scale;
+  const ty = options.alignTop
+    ? padY - bounds.y * scale
+    : viewportH / 2 - (bounds.y + bounds.height / 2) * scale;
 
   return d3.zoomIdentity
     .translate(tx, ty)
@@ -1184,14 +1452,15 @@ function _computeFitTransform(totalHeight, minScale = FIT_READABLE_MIN_SCALE) {
 
 function _applyTransform(transform, animate) {
   if (!svg || !zoom) return;
+  const clampedTransform = _clampTransformScale(transform);
   if (animate) {
     svg.transition()
       .duration(CAMERA_EASE_MS)
       .ease(d3.easeCubicOut)
-      .call(zoom.transform, transform);
+      .call(zoom.transform, clampedTransform);
     return;
   }
-  svg.call(zoom.transform, transform);
+  svg.call(zoom.transform, clampedTransform);
 }
 
 function _updateTranslateExtent(totalHeight) {
@@ -1217,6 +1486,29 @@ function _centerOn(graphX, graphY, options = {}) {
     .translate(viewportW / 2 - graphX * k, viewportH / 2 - graphY * k)
     .scale(k);
   _applyTransform(transform, options.animate ?? true);
+}
+
+function _setZoomScaleExtent(minScale = ZOOM_MIN_SCALE) {
+  if (!zoom) return;
+  const floor = Math.max(ZOOM_MIN_SCALE, Math.min(minScale, ZOOM_MAX_SCALE));
+  zoom.scaleExtent([floor, ZOOM_MAX_SCALE]);
+}
+
+function _clampTransformScale(transform) {
+  if (!zoom || !svg?.node()) return transform;
+  const [minScale, maxScale] = zoom.scaleExtent();
+  const nextScale = Math.max(minScale, Math.min(transform?.k ?? 1, maxScale));
+  if (Math.abs(nextScale - (transform?.k ?? 1)) < 1e-6) return transform;
+
+  const viewportW = svg.node().clientWidth;
+  const viewportH = svg.node().clientHeight;
+  const currentScale = Math.max(transform?.k ?? 1, 1e-6);
+  const graphCenterX = (viewportW / 2 - (transform?.x ?? 0)) / currentScale;
+  const graphCenterY = (viewportH / 2 - (transform?.y ?? 0)) / currentScale;
+
+  return d3.zoomIdentity
+    .translate(viewportW / 2 - graphCenterX * nextScale, viewportH / 2 - graphCenterY * nextScale)
+    .scale(nextScale);
 }
 
 function _suffix(itemId) {
@@ -1263,6 +1555,18 @@ function _formatAttrValue(key, value) {
   return key === "Document_Type" ? _ellipsis(value, 20) : value;
 }
 
+function _rgba(value, alpha = 1) {
+  const color = d3.color(value);
+  if (!color) return value;
+  color.opacity = alpha;
+  return color.formatRgb();
+}
+
+function _formatPercent(fraction) {
+  const percent = Math.max(0, fraction ?? 0) * 100;
+  return `${percent >= 10 ? Math.round(percent) : percent.toFixed(1)}%`;
+}
+
 function _eventRadius(d) {
   return d?.isSyncEvent ? EVENT_R + Math.min(Math.max((d.syncDegree ?? 1) - 1, 1), 5) * 1.7 : EVENT_R;
 }
@@ -1284,22 +1588,6 @@ function _neighborSummary(activities) {
   return activities?.length ? activities.join(", ") : "—";
 }
 
-function _eventTooltipHtml(d) {
-  const fmt = d.date?.toLocaleDateString("en-GB", {
-    day: "numeric", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  }) ?? "—";
-  return `<div class="tip-title">${d.activity}</div>
-    <div class="tip-row">ID: <b>${d.id}</b></div>
-    <div class="tip-row">Date: <b>${fmt}</b></div>
-    <div class="tip-row">POItem: <b>${d.poitem_id}</b></div>
-    ${d.isSyncEvent ? `<div class="tip-row">Sync degree: <b>${d.syncDegree}</b></div>` : ""}
-    ${d.isSyncEvent && d.sharedEntityIds?.length ? `<div class="tip-row">Shared by: <b>${d.sharedEntityIds.join(", ")}</b></div>` : ""}
-    ${_hasResourceValue(d.org_resource) ? `<div class="tip-row">Resource: <b>${d.org_resource}</b></div>` : ""}
-    ${d.lifecycle_transition ? `<div class="tip-row">Lifecycle: <b>${d.lifecycle_transition}</b></div>` : ""}
-    ${_tooltipRows(d, ["Document_Type", "Source", "Vendor", "Company"])}
-    ${d.isSyncEvent ? _syncContextRows(d.syncContexts ?? []) : ""}`;
-}
 
 function _edgeTooltipHtml(d) {
   return `<div class="tip-title">DF edge</div>
@@ -1356,3 +1644,4 @@ function _addMarkers(defs) {
   mk("arr-dfpo",   PO_COLOR);
   mk("arr-corr",   "rgba(34,48,71,0.22)", 4);
 }
+
